@@ -1,0 +1,31 @@
+{
+  "os":  "Linux-5.4.0-198-generic-x86_64-with-glibc2.29",
+  "python":  "3.8.10",
+  "startedAt":  "2024-11-21T07:09:16.221789Z",
+  "program":  "multi_label_classification.ipynb",
+  "git":  {
+    "remote":  "https://github.com/ryanzhangofficial/Energy-Optimal-Inferencing.git",
+    "commit":  "c72fb354ab131d8a88e146d734fc3da03319b829"
+  },
+  "email":  "ryzhangofficial@gmail.com",
+  "root":  "/mnt/srv.nas/Energy-Optimal-Inferencing",
+  "host":  "Testing",
+  "username":  "root",
+  "executable":  "/usr/bin/python3",
+  "codePathLocal":  "multi_label_classification.ipynb",
+  "cpu_count":  8,
+  "cpu_count_logical":  8,
+  "disk":  {
+    "/":  {
+      "total":  "31024283648",
+      "used":  "17175916544"
+    }
+  },
+  "memory":  {
+    "total":  "65250414592"
+  },
+  "cpu":  {
+    "count":  8,
+    "countLogical":  8
+  }
+}

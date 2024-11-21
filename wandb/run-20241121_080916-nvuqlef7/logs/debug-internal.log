@@ -1,0 +1,22 @@
+{"time":"2024-11-21T08:09:16.233780396+01:00","level":"INFO","msg":"using version","core version":"0.18.0"}
+{"time":"2024-11-21T08:09:16.233959984+01:00","level":"INFO","msg":"created symlink","path":"/mnt/srv.nas/Energy-Optimal-Inferencing/wandb/run-20241121_080916-nvuqlef7/logs/debug-core.log"}
+{"time":"2024-11-21T08:09:16.238019094+01:00","level":"INFO","msg":"using version","core version":"0.18.0"}
+{"time":"2024-11-21T08:09:16.238051312+01:00","level":"INFO","msg":"created symlink","path":"/mnt/srv.nas/Energy-Optimal-Inferencing/wandb/run-20241121_080916-nvuqlef7/logs/debug-core.log"}
+{"time":"2024-11-21T08:09:16.252182791+01:00","level":"INFO","msg":"created new stream","id":"nvuqlef7"}
+{"time":"2024-11-21T08:09:16.252281192+01:00","level":"INFO","msg":"stream: started","id":"nvuqlef7"}
+{"time":"2024-11-21T08:09:16.252372436+01:00","level":"INFO","msg":"sender: started","stream_id":{"value":"nvuqlef7"}}
+{"time":"2024-11-21T08:09:16.252542013+01:00","level":"INFO","msg":"handler: started","stream_id":{"value":"nvuqlef7"}}
+{"time":"2024-11-21T08:09:16.252414633+01:00","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"nvuqlef7"}}
+{"time":"2024-11-21T08:09:16.766412754+01:00","level":"INFO","msg":"wandb-core","!BADKEY":null}
+{"time":"2024-11-21T08:09:16.775174455+01:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2024-11-21T10:50:57.505315396+01:00","level":"INFO","msg":"Pausing system monitor"}
+{"time":"2024-11-21T13:04:18.5808048+01:00","level":"INFO","msg":"Resuming system monitor"}
+{"time":"2024-11-21T13:04:20.262095563+01:00","level":"INFO","msg":"Pausing system monitor"}
+{"time":"2024-11-21T13:10:48.278255638+01:00","level":"INFO","msg":"Resuming system monitor"}
+{"time":"2024-11-21T13:10:49.625336649+01:00","level":"INFO","msg":"Pausing system monitor"}
+{"time":"2024-11-21T13:10:54.218234673+01:00","level":"INFO","msg":"Resuming system monitor"}
+{"time":"2024-11-21T13:10:55.587485323+01:00","level":"INFO","msg":"Pausing system monitor"}
+{"time":"2024-11-21T13:11:28.60760385+01:00","level":"INFO","msg":"Resuming system monitor"}
+{"time":"2024-11-21T13:11:30.358329413+01:00","level":"INFO","msg":"Pausing system monitor"}
+{"time":"2024-11-21T13:11:32.016537686+01:00","level":"INFO","msg":"Resuming system monitor"}
+{"time":"2024-11-21T13:11:34.16267952+01:00","level":"INFO","msg":"Pausing system monitor"}

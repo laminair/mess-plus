@@ -1,0 +1,11 @@
+{"time":"2024-11-21T19:15:07.973778367+01:00","level":"INFO","msg":"using version","core version":"0.18.0"}
+{"time":"2024-11-21T19:15:07.973843646+01:00","level":"INFO","msg":"created symlink","path":"/mnt/srv.nas/Energy-Optimal-Inferencing/wandb/run-20241121_191507-24wfa2hn/logs/debug-core.log"}
+{"time":"2024-11-21T19:15:07.976919586+01:00","level":"INFO","msg":"using version","core version":"0.18.0"}
+{"time":"2024-11-21T19:15:07.976934341+01:00","level":"INFO","msg":"created symlink","path":"/mnt/srv.nas/Energy-Optimal-Inferencing/wandb/run-20241121_191507-24wfa2hn/logs/debug-core.log"}
+{"time":"2024-11-21T19:15:07.994724486+01:00","level":"INFO","msg":"created new stream","id":"24wfa2hn"}
+{"time":"2024-11-21T19:15:07.994772505+01:00","level":"INFO","msg":"stream: started","id":"24wfa2hn"}
+{"time":"2024-11-21T19:15:07.994825034+01:00","level":"INFO","msg":"sender: started","stream_id":{"value":"24wfa2hn"}}
+{"time":"2024-11-21T19:15:07.99487745+01:00","level":"INFO","msg":"handler: started","stream_id":{"value":"24wfa2hn"}}
+{"time":"2024-11-21T19:15:07.994817713+01:00","level":"INFO","msg":"writer: Do: started","stream_id":{"value":"24wfa2hn"}}
+{"time":"2024-11-21T19:15:08.398425741+01:00","level":"INFO","msg":"wandb-core","!BADKEY":null}
+{"time":"2024-11-21T19:15:08.406627299+01:00","level":"INFO","msg":"Starting system monitor"}
