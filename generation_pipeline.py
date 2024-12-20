@@ -42,6 +42,8 @@ MODELS = [
 
 MAX_SEQ_LEN = 8192
 NUM_SAMPLES = 10_000
+NUM_BATCHES = 500
+SAMPLES_PER_BATCH = NUM_SAMPLES / NUM_BATCHES
 
 # See for reference: https://docs.vllm.ai/en/v0.5.5/dev/sampling_params.html
 SAMPLING_PARAMS = SamplingParams(
@@ -111,27 +113,34 @@ def main():
         tokenizer = AutoTokenizer.from_pretrained(model_name, padding=True, truncation=True, max_length=512)
         tokenizer.pad_token = tokenizer.eos_token
         # print(tokenizer.chat_template)
-        dataset_formatted = dataset.map(lambda sentence_pair: add_instruction(sentence_pair, tokenizer), remove_columns=['translation'])
+        dataset_formatted = dataset.map(lambda sentence_pair: add_instruction(sentence_pair, tokenizer))
 
         model = LLM(
             model_name, 
             max_model_len=MAX_SEQ_LEN, 
             trust_remote_code=True
         )
-        
-        monitor.begin_window("pass")
-        outputs = model.generate(dataset_formatted["input_formatted"], SAMPLING_PARAMS)
-        measurement = monitor.end_window("pass")
 
-        processing_time_per_sample = measurement.time / NUM_SAMPLES
-        energy_per_sample = measurement.total_energy / NUM_SAMPLES
-
-        for idx, output in enumerate(outputs): 
-            df.loc[df["input_text"] == dataset[idx]['translation']['de'], f"output_{model_name.replace('/', '_')}"] = output.outputs[0].text
-            df.loc[df["input_text"] == dataset[idx]['translation']['de'], f"energy_{model_name.replace('/', '_')}"] = energy_per_sample
-            df.loc[df["input_text"] == dataset[idx]['translation']['de'], f"time_{model_name.replace('/', '_')}"] = processing_time_per_sample
+        for batch in range(NUM_BATCHES):
+            subset = dataset_formatted.select(range(
+                int(SAMPLES_PER_BATCH * batch), 
+                int(SAMPLES_PER_BATCH * (batch + 1))
+            ))
         
-        df.to_csv(f"simulation_data.csv")
+            monitor.begin_window("pass")
+            outputs = model.generate(subset["input_formatted"], SAMPLING_PARAMS)
+            measurement = monitor.end_window("pass")
+    
+            processing_time_per_sample = measurement.time / NUM_SAMPLES
+            energy_per_sample = measurement.total_energy / NUM_SAMPLES
+    
+            for idx, output in enumerate(outputs): 
+                df.loc[df["input_text"] == subset[idx]['translation']['de'], f"output_{model_name.replace('/', '_')}"] = output.outputs[0].text
+                df.loc[df["input_text"] == subset[idx]['translation']['de'], f"energy_{model_name.replace('/', '_')}"] = energy_per_sample
+                df.loc[df["input_text"] == subset[idx]['translation']['de'], f"time_{model_name.replace('/', '_')}"] = processing_time_per_sample
+        
+            df.to_csv(f"simulation_data.csv")
+        
         reset_vllm_gpu_environment(model)
 
     df = df.apply(compute_text_metrics, axis=1)
