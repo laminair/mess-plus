@@ -43,6 +43,8 @@ SAMPLING_PARAMS = SamplingParams(
 
 NUM_GPUS = torch.cuda.device_count()
 
+FILE_PATH = Path(__file__).parent.resolve()
+
 
 def add_instruction(sentence_pair, tokenizer: AutoTokenizer = None):
 
@@ -159,7 +161,7 @@ if __name__ == "__main__":
     parser.add_argument('--model-name', type=str, help='Name of model.')
     args = parser.parse_args()
 
-    CSV_FILE_PATH = Path(f"data/simulation_data_{args.model_name.replace('/', '_')}.csv")
+    CSV_FILE_PATH = Path(f"{FILE_PATH}/data/simulation_data_{args.model_name.replace('/', '_')}.csv")
 
     main(model_name=args.model_name)
     
