@@ -94,7 +94,7 @@ def compute_text_metrics(row):
 
 def main(model_name: str, csv_file_path: str):
     dataset = load_dataset('wmt14', 'de-en', split='train')
-    dataset = dataset.shuffle().select(range(NUM_SAMPLES))
+    dataset = dataset.select(range(NUM_SAMPLES))
 
     if CSV_FILE_PATH.exists():
         print("Loaded already existing pandas df...")
