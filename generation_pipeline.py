@@ -92,13 +92,13 @@ def compute_text_metrics(row):
     return row
 
 
-def main(model_name: str, csv_file_path: str):
+def main(model_name: str):
     dataset = load_dataset('wmt14', 'de-en', split='train')
     dataset = dataset.select(range(NUM_SAMPLES))
 
-    if Path(csv_file_path).exists():
+    if CSV_FILE_PATH.exists():
         print("Loaded already existing pandas df...")
-        df = pd.read_csv(csv_file_path)
+        df = pd.read_csv(CSV_FILE_PATH)
     else:
         df = pd.DataFrame()
 
@@ -143,12 +143,12 @@ def main(model_name: str, csv_file_path: str):
             df.loc[df["input_text"] == subset[idx]['translation']['de'], f"energy_{model_name.replace('/', '_')}"] = energy_per_sample
             df.loc[df["input_text"] == subset[idx]['translation']['de'], f"time_{model_name.replace('/', '_')}"] = processing_time_per_sample
 
-        df.to_csv(csv_file_path)
+        df.to_csv(CSV_FILE_PATH)
 
     reset_vllm_gpu_environment(model)
 
     df = df.apply(compute_text_metrics, axis=1)
-    df.to_csv(csv_file_path)
+    df.to_csv(CSV_FILE_PATH)
 
     return
 
@@ -159,7 +159,7 @@ if __name__ == "__main__":
     parser.add_argument('--model-name', type=str, help='Name of model.')
     args = parser.parse_args()
 
-    CSV_FILE_PATH = f"data/simulation_data_{args.model_name.replace('/', '_')}.csv"
+    CSV_FILE_PATH = Path(f"data/simulation_data_{args.model_name.replace('/', '_')}.csv")
 
-    main(model_name=args.model_name, csv_file_path=CSV_FILE_PATH)
+    main(model_name=args.model_name)
     
