@@ -46,18 +46,15 @@ NUM_GPUS = torch.cuda.device_count()
 FILE_PATH = Path(__file__).parent.resolve()
 
 
-def add_instruction(sentence_pair, tokenizer: AutoTokenizer = None):
+def add_instruction(input_text, tokenizer: AutoTokenizer = None):
 
     message = [
         {"role": "system", "content": "You are a helpful chatbot that translates text from German to English. Only provide the translation, nothing else."},
-        {"role": "user", "content": {sentence_pair['translation']['de']}}
+        {"role": "user", "content": {input_text}}
         # {"role": "user", "content": f"Please translate the following sentence from German to English: \n\n{sentence_pair['translation']['de']}"}
     ]
 
-    sentence_pair["input_formatted"] = tokenizer.apply_chat_template(message, tokenize=False, add_generation_prompt=True)
-    sentence_pair["target"] = sentence_pair["translation"]["en"]
-    
-    return sentence_pair
+    return tokenizer.apply_chat_template(message, tokenize=False, add_generation_prompt=True)
 
 
 def compute_text_metrics(row):
@@ -104,7 +101,8 @@ def main(model_name: str):
     else:
         df = pd.DataFrame()
 
-    df["input_text"] = [dataset[idx]['translation']['de'] for idx in range(len(dataset["translation"]))]
+    if not "input_text" in df.columns.tolist():
+        df["input_text"] = [dataset[idx]['translation']['de'] for idx in range(len(dataset["translation"]))]
 
     # When using Zeus, you must disable RAPL CPU monitoring as this will cause the program to fail. 
     # Change "return True" to "return False" in file venv/lib/python3.12/site-packages/zeus/device/cpu/rapl.py (l. 137)
@@ -117,7 +115,7 @@ def main(model_name: str):
     tokenizer = AutoTokenizer.from_pretrained(model_name, padding=True, truncation=True, max_length=512)
     tokenizer.pad_token = tokenizer.eos_token
 
-    dataset_formatted = dataset.map(lambda sentence_pair: add_instruction(sentence_pair, tokenizer))
+    df["input_formatted"] = df["input_text"].apply(lambda txt: add_instruction(txt, tokenizer=tokenizer))
 
     model = LLM(
         model_name,
@@ -127,30 +125,30 @@ def main(model_name: str):
     )
 
     for batch in range(NUM_BATCHES):
-
-        subset = dataset_formatted.select(range(
-            int(SAMPLES_PER_BATCH * batch),
-            int(SAMPLES_PER_BATCH * (batch + 1))
-        ))
+        min_idx = int(SAMPLES_PER_BATCH * batch)
+        max_idx = int(SAMPLES_PER_BATCH * (batch + 1))
 
         monitor.begin_window("pass")
-        outputs = model.generate(subset["input_formatted"], SAMPLING_PARAMS)
+        outputs = model.generate(
+            df.iloc[min_idx: max_idx].loc[:, "input_formatted"].tolist(),
+            SAMPLING_PARAMS
+        )
         measurement = monitor.end_window("pass")
 
         processing_time_per_sample = measurement.time / NUM_SAMPLES
         energy_per_sample = measurement.total_energy / NUM_SAMPLES
 
         for idx, output in enumerate(outputs):
-            df.loc[df["input_text"] == subset[idx]['translation']['de'], f"output_{model_name.replace('/', '_')}"] = output.outputs[0].text
-            df.loc[df["input_text"] == subset[idx]['translation']['de'], f"energy_{model_name.replace('/', '_')}"] = energy_per_sample
-            df.loc[df["input_text"] == subset[idx]['translation']['de'], f"time_{model_name.replace('/', '_')}"] = processing_time_per_sample
+            df.loc[df.index == (min_idx + idx), f"output_{model_name.replace('/', '_')}"] = output.outputs[0].text
+            df.loc[df.index == (min_idx + idx), f"energy_{model_name.replace('/', '_')}"] = energy_per_sample
+            df.loc[df.index == (min_idx + idx), f"time_{model_name.replace('/', '_')}"] = processing_time_per_sample
 
-        df.to_csv(CSV_FILE_PATH)
+        df.to_csv(CSV_FILE_PATH, index=False)
 
     reset_vllm_gpu_environment(model)
 
     df = df.apply(compute_text_metrics, axis=1)
-    df.to_csv(CSV_FILE_PATH)
+    df.to_csv(CSV_FILE_PATH, index=False)
 
     return
 
