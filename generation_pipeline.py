@@ -114,7 +114,11 @@ def main():
     # Change "return True" to "return False" in file venv/lib/python3.12/site-packages/zeus/device/cpu/rapl.py (l. 137)
     monitor = ZeusMonitor(gpu_indices=[torch.cuda.current_device()])
 
-    for model_name in MODELS: 
+    for model_name in MODELS:
+
+        if f"output_{model_name.replace('/', '_')}" in df.columns.tolist():
+            print("Model outputs already captured in dataframe. Skipping...")
+            continue
 
         tokenizer = AutoTokenizer.from_pretrained(model_name, padding=True, truncation=True, max_length=512)
         tokenizer.pad_token = tokenizer.eos_token
