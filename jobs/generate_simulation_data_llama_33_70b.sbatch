@@ -5,11 +5,6 @@
 #SBATCH --time=02:30:00
 #SBATCH -o output_%A.out
 
-# The following environment variables need to be present inside the enroot container
-# export HF_HOME=/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/.cache/hf/misc
-# export HF_DATASETS_CACHE=/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/.cache/datasets
-# export TRANSFORMERS_CACHE=/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/.cache/models
-
 cd "$(dirname "$0")"
 
 nvidia-smi
@@ -27,4 +22,5 @@ enroot start \
     --mount /sbin \
     eoinference_v1 \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/python \
-    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/generation_pipeline.py
+    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/generation_pipeline.py \
+    --model-name meta-llama/Llama-3.3-70B-Instruct

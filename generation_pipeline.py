@@ -14,6 +14,8 @@ from utils.gpu_management import reset_vllm_gpu_environment
 
 from zeus.monitor import ZeusMonitor
 
+import argparse
+
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
@@ -25,13 +27,6 @@ print(f"cuDNN version: {torch.backends.cudnn.version()}")
 with open(f"{Path.home()}/.cache/huggingface/token", "r") as f:
     HF_TOKEN = f.read()
     f.close()
-
-
-MODELS = [
-    "meta-llama/Llama-3.3-70B-Instruct",
-    "meta-llama/Llama-3.1-8B-Instruct",
-    "meta-llama/Llama-3.2-3B-Instruct"
-]
 
 MAX_SEQ_LEN = 8192
 NUM_SAMPLES = 10_000
@@ -47,8 +42,6 @@ SAMPLING_PARAMS = SamplingParams(
 )
 
 NUM_GPUS = torch.cuda.device_count()
-
-CSV_FILE_PATH = Path(f"data/simulation_data.csv")
 
 
 def add_instruction(sentence_pair, tokenizer: AutoTokenizer = None):
@@ -99,7 +92,7 @@ def compute_text_metrics(row):
     return row
 
 
-def main(): 
+def main(model_name: str, csv_file_path: str):
     dataset = load_dataset('wmt14', 'de-en', split='train')
     dataset = dataset.shuffle().select(range(NUM_SAMPLES))
 
@@ -114,51 +107,58 @@ def main():
     # Change "return True" to "return False" in file venv/lib/python3.12/site-packages/zeus/device/cpu/rapl.py (l. 137)
     monitor = ZeusMonitor(gpu_indices=[torch.cuda.current_device()])
 
-    for model_name in MODELS:
+    if f"output_{model_name.replace('/', '_')}" in df.columns.tolist():
+        print("Model outputs already captured in dataframe. Skipping...")
+        return
 
-        if f"output_{model_name.replace('/', '_')}" in df.columns.tolist():
-            print("Model outputs already captured in dataframe. Skipping...")
-            continue
+    tokenizer = AutoTokenizer.from_pretrained(model_name, padding=True, truncation=True, max_length=512)
+    tokenizer.pad_token = tokenizer.eos_token
 
-        tokenizer = AutoTokenizer.from_pretrained(model_name, padding=True, truncation=True, max_length=512)
-        tokenizer.pad_token = tokenizer.eos_token
-        # print(tokenizer.chat_template)
-        dataset_formatted = dataset.map(lambda sentence_pair: add_instruction(sentence_pair, tokenizer))
+    dataset_formatted = dataset.map(lambda sentence_pair: add_instruction(sentence_pair, tokenizer))
 
-        model = LLM(
-            model_name, 
-            max_model_len=MAX_SEQ_LEN, 
-            trust_remote_code=True,
-            tensor_parallel_size=NUM_GPUS
-        )
+    model = LLM(
+        model_name,
+        max_model_len=MAX_SEQ_LEN,
+        trust_remote_code=True,
+        tensor_parallel_size=NUM_GPUS
+    )
 
-        for batch in range(NUM_BATCHES):
+    for batch in range(NUM_BATCHES):
 
-            subset = dataset_formatted.select(range(
-                int(SAMPLES_PER_BATCH * batch), 
-                int(SAMPLES_PER_BATCH * (batch + 1))
-            ))
-        
-            monitor.begin_window("pass")
-            outputs = model.generate(subset["input_formatted"], SAMPLING_PARAMS)
-            measurement = monitor.end_window("pass")
-    
-            processing_time_per_sample = measurement.time / NUM_SAMPLES
-            energy_per_sample = measurement.total_energy / NUM_SAMPLES
-    
-            for idx, output in enumerate(outputs): 
-                df.loc[df["input_text"] == subset[idx]['translation']['de'], f"output_{model_name.replace('/', '_')}"] = output.outputs[0].text
-                df.loc[df["input_text"] == subset[idx]['translation']['de'], f"energy_{model_name.replace('/', '_')}"] = energy_per_sample
-                df.loc[df["input_text"] == subset[idx]['translation']['de'], f"time_{model_name.replace('/', '_')}"] = processing_time_per_sample
-        
-            df.to_csv(CSV_FILE_PATH)
-        
-        reset_vllm_gpu_environment(model)
+        subset = dataset_formatted.select(range(
+            int(SAMPLES_PER_BATCH * batch),
+            int(SAMPLES_PER_BATCH * (batch + 1))
+        ))
+
+        monitor.begin_window("pass")
+        outputs = model.generate(subset["input_formatted"], SAMPLING_PARAMS)
+        measurement = monitor.end_window("pass")
+
+        processing_time_per_sample = measurement.time / NUM_SAMPLES
+        energy_per_sample = measurement.total_energy / NUM_SAMPLES
+
+        for idx, output in enumerate(outputs):
+            df.loc[df["input_text"] == subset[idx]['translation']['de'], f"output_{model_name.replace('/', '_')}"] = output.outputs[0].text
+            df.loc[df["input_text"] == subset[idx]['translation']['de'], f"energy_{model_name.replace('/', '_')}"] = energy_per_sample
+            df.loc[df["input_text"] == subset[idx]['translation']['de'], f"time_{model_name.replace('/', '_')}"] = processing_time_per_sample
+
+        df.to_csv(csv_file_path)
+
+    reset_vllm_gpu_environment(model)
 
     df = df.apply(compute_text_metrics, axis=1)
-    df.to_csv(CSV_FILE_PATH)
+    df.to_csv(csv_file_path)
+
+    return
 
 
-if __name__ == "__main__": 
-    main()
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description='Simulation data generator.')
+    parser.add_argument('--model-name', type=str, help='Name of model.')
+    args = parser.parse_args()
+
+    CSV_FILE_PATH = Path(f"data/simulation_data_{args.model_name.replace('/', '_')}.csv")
+
+    main(model_name=args.model_name, csv_file_path=str(CSV_FILE_PATH))
     
