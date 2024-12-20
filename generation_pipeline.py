@@ -96,7 +96,7 @@ def main(model_name: str, csv_file_path: str):
     dataset = load_dataset('wmt14', 'de-en', split='train')
     dataset = dataset.select(range(NUM_SAMPLES))
 
-    if CSV_FILE_PATH.exists():
+    if Path(csv_file_path).exists():
         print("Loaded already existing pandas df...")
         df = pd.read_csv(csv_file_path)
     else:
