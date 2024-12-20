@@ -138,8 +138,6 @@ def main(model_name: str):
         processing_time_per_sample = measurement.time / NUM_SAMPLES
         energy_per_sample = measurement.total_energy / NUM_SAMPLES
 
-        df.iloc[min_idx: max_idx].loc[:, "input_formatted"] = ""
-
         for idx, output in enumerate(outputs):
             df.loc[df.index == (min_idx + idx), f"output_{model_name.replace('/', '_')}"] = output.outputs[0].text
             df.loc[df.index == (min_idx + idx), f"energy_{model_name.replace('/', '_')}"] = energy_per_sample
