@@ -1,12 +1,6 @@
-import pickle
-import wandb
-import threading
+import numpy as np
 import torch
-import sys
 import os
-import gc
-import contextlib
-import transformers
 import pandas as pd
 import textstat
 
@@ -34,26 +28,27 @@ with open(f"{Path.home()}/.cache/huggingface/token", "r") as f:
 
 
 MODELS = [
-    "meta-llama/Llama-3.2-3B-Instruct", 
-    "neuralmagic/Meta-Llama-3.1-8B-Instruct-quantized.w8a16", 
-    # "google/gemma-2-2b-it", 
-    # "solidrust/gemma-2-9b-it-AWQ"
+    "meta-llama/Llama-3.3-70B-Instruct",
+    "meta-llama/Llama-3.1-8B-Instruct",
+    "meta-llama/Llama-3.2-3B-Instruct"
 ]
 
 MAX_SEQ_LEN = 8192
 NUM_SAMPLES = 10_000
-NUM_BATCHES = 500
+NUM_BATCHES = 100
 SAMPLES_PER_BATCH = NUM_SAMPLES / NUM_BATCHES
 
 # See for reference: https://docs.vllm.ai/en/v0.5.5/dev/sampling_params.html
 SAMPLING_PARAMS = SamplingParams(
     temperature=0.8, 
     top_p=0.95,
-    min_tokens=1,
+    min_tokens=1,  # this is key as some models may refuse to generate anything if set to 0.
     max_tokens=128,
 )
 
 NUM_GPUS = torch.cuda.device_count()
+
+CSV_FILE_PATH = Path(f"data/simulation_data.csv")
 
 
 def add_instruction(sentence_pair, tokenizer: AutoTokenizer = None):
@@ -71,7 +66,6 @@ def add_instruction(sentence_pair, tokenizer: AutoTokenizer = None):
 
 
 def compute_text_metrics(row):
-
     text = row["input_text"]
 
     row["flesch_reading_ease"] = textstat.flesch_reading_ease(text)
@@ -91,8 +85,16 @@ def compute_text_metrics(row):
     row["szigriszt_pazos"] = textstat.szigriszt_pazos(text)
     row["gutierrez_polini"] = textstat.gutierrez_polini(text)
     row["crawford"] = textstat.crawford(text)
-    row["gulpease_index"] = textstat.gulpease_index(text)
-    row["osman"] = textstat.osman(text)
+
+    try:
+        row["gulpease_index"] = textstat.gulpease_index(text)
+    except ZeroDivisionError:
+        row["gulpease_index"] = np.nan
+
+    try:
+        row["osman"] = textstat.osman(text)
+    except ZeroDivisionError:
+        row["osman"] = np.nan
 
     return row
 
@@ -101,11 +103,15 @@ def main():
     dataset = load_dataset('wmt14', 'de-en', split='train')
     dataset = dataset.shuffle().select(range(NUM_SAMPLES))
 
-    df = pd.DataFrame()
+    if CSV_FILE_PATH.exists():
+        print("Loaded already existing pandas df...")
+        df = pd.read_csv(CSV_FILE_PATH)
+    else:
+        df = pd.DataFrame()
     df["input_text"] = [dataset[idx]['translation']['de'] for idx in range(len(dataset["translation"]))]
 
     # When using Zeus, you must disable RAPL CPU monitoring as this will cause the program to fail. 
-    # Change "return True" to "return False" in file venv/lib/python3.12/site-packages/zeus/device/cpu/rapl.py (line 137)
+    # Change "return True" to "return False" in file venv/lib/python3.12/site-packages/zeus/device/cpu/rapl.py (l. 137)
     monitor = ZeusMonitor(gpu_indices=[torch.cuda.current_device()])
 
     for model_name in MODELS: 
@@ -118,10 +124,12 @@ def main():
         model = LLM(
             model_name, 
             max_model_len=MAX_SEQ_LEN, 
-            trust_remote_code=True
+            trust_remote_code=True,
+            tensor_parallel_size=NUM_GPUS
         )
 
         for batch in range(NUM_BATCHES):
+
             subset = dataset_formatted.select(range(
                 int(SAMPLES_PER_BATCH * batch), 
                 int(SAMPLES_PER_BATCH * (batch + 1))
@@ -139,12 +147,12 @@ def main():
                 df.loc[df["input_text"] == subset[idx]['translation']['de'], f"energy_{model_name.replace('/', '_')}"] = energy_per_sample
                 df.loc[df["input_text"] == subset[idx]['translation']['de'], f"time_{model_name.replace('/', '_')}"] = processing_time_per_sample
         
-            df.to_csv(f"simulation_data.csv")
+            df.to_csv(CSV_FILE_PATH)
         
         reset_vllm_gpu_environment(model)
 
     df = df.apply(compute_text_metrics, axis=1)
-    df.to_csv(f"simulation_data.csv")
+    df.to_csv(CSV_FILE_PATH)
 
 
 if __name__ == "__main__": 
