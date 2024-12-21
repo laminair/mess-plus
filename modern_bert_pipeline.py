@@ -21,6 +21,9 @@ def mean_pooling(model_output, attention_mask):
 
 
 def main(source_folder: str, target_folder: str, include_pca: bool = False, pca_dim: int = 25, minibatch_size: int = 64):
+
+    print(f"Using PCA: {include_pca}.")
+
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     model = AutoModelForMaskedLM.from_pretrained(MODEL_NAME)
     model = model.to(DEVICE)
@@ -62,6 +65,7 @@ def main(source_folder: str, target_folder: str, include_pca: bool = False, pca_
                 #     - Discussion on an embedding approximation: https://stackoverflow.com/questions/75796047/how-to-evaluate-the-quality-of-pca-returned-by-torch-pca-lowrank
                 #     - Batched processing: https://github.com/pytorch/pytorch/issues/99705
                 U, S, V = torch.pca_lowrank(word_embeddings, q=pca_dim, center=True, niter=2)
+                S = S.cpu()
                 pca_list += [i for i in S]
                 # TODO: We may have to assess the PCA quality at some point.
                 
