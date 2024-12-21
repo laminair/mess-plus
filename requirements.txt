@@ -108,7 +108,7 @@ tokenizers==0.21.0
 torch==2.5.1
 torchvision==0.20.1
 tqdm==4.67.1
-transformers==4.47.1
+transformers @ git+https://github.com/huggingface/transformers.git@8f38f58f3de5a35f9b8505e9b48985dce5470985
 typeguard==4.4.1
 typing_extensions==4.12.2
 tyro==0.9.4

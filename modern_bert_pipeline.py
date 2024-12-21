@@ -1,12 +1,10 @@
-import torch 
-import math
+import argparse
+import torch
 import os
 import pandas as pd
 
-from transformers import DataCollatorWithPadding
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 
-from tqdm import tqdm
 
 torch.set_float32_matmul_precision('high')
 
@@ -27,16 +25,14 @@ def main(source_folder: str, target_folder: str, include_pca: bool = False, pca_
     model = AutoModelForMaskedLM.from_pretrained(MODEL_NAME)
     model = model.to(DEVICE)
 
-    files = os.listdir(SOURCE_FILE_FOLDER)
-    print(f"Found {len(FILES)} files for processing.")
+    files = os.listdir(source_folder)
+    print(f"Found {len(files)} files for processing.")
 
-    text_counter = 0
-    for idx, file_name in enumerate(FILES):
-        df = pd.read_parquet(f"{SOURCE_FILE_FOLDER}/{file_name}")
-        input_text = df["input_text"].tolist()
+    for idx, file_name in enumerate(files):
+        df = pd.read_parquet(f"{source_folder}/{file_name}")
     
         tokenized_data = tokenizer.batch_encode_plus(
-            input_text,        	
+            df["input_text"].tolist(),
             truncation=True,   
             padding='max_length',
             return_tensors='pt',  	
@@ -67,38 +63,41 @@ def main(source_folder: str, target_folder: str, include_pca: bool = False, pca_
                 #     - Batched processing: https://github.com/pytorch/pytorch/issues/99705
                 U, S, V = torch.pca_lowrank(word_embeddings, q=pca_dim, center=True, niter=2)
                 pca_list += [i for i in S]
-            
                 # TODO: We may have to assess the PCA quality at some point.
                 
             # document_embedding = torch.nanmean(word_embeddings, dim=1)
             document_embeddings = mean_pooling(word_embeddings, attention_mask=attn_mask)
             document_embeddings = document_embeddings.cpu()
-    
-            min_idx = text_counter
-            text_counter += document_embeddings.shape[0]
-            max_idx = text_counter
             
             emb_list += [i for i in document_embeddings]
-            print(f"Completed minibatch #{jdx} for file #{idx} of {len(FILES)}.")
+            print(f"Completed minibatch #{jdx} for file #{idx} of {len(files)}.")
     
         df["input_text_modern_bert_embed"] = pd.Series(emb_list).astype(object)
 
         if include_pca: 
             df["input_text_modern_bert_pca_{pca_dim}_dims"] = pd.Series(pca_list).astype(object)
 
-        df.to_parquet(f"{TARGET_FILE_FOLDER}/{file_name}")
-        print(f"Completed file #{idx} of {len(FILES)}.")
+        df.to_parquet(f"{target_folder}/{file_name}")
+        print(f"Completed file #{idx} of {len(files)}.")
 
 
 if __name__ == "__main__": 
 
     parser = argparse.ArgumentParser(description='Embedding generator.')
     parser.add_argument('--source-folder', type=str, help='Path to folder that contains source files. Relative to script.')
-    parser.add_argument('--target-folder', type=bool, default=store_false, help='Path to output folder. Relative to script.')
-    parser.add_argument('--include-pca', type=bool, default=store_false, help='Include PCA embedding.')
+    parser.add_argument('--target-folder', type=bool, default="store_false", help='Path to output folder. Relative to script.')
+    parser.add_argument('--include-pca', type=bool, default="store_false", help='Include PCA embedding.')
     parser.add_argument('--pca-dim', type=int, default=25, help='Dimensions for PCA.')
     # MBS = 64 requires about 20GB VRAM.
     parser.add_argument('--minibatch-size', type=int, default=64, help='Minibatch size to use with the Modern Bert Model.')
     args = parser.parse_args()
 
-    main(source_folder=args.source_folder, target_folder=args.target_folder, include_pca=args.include_pca, pca_dim=args.pca_dim, minibatch_size=minibatch_size)
+    main(
+        source_folder=args.source_folder,
+        target_folder=args.target_folder,
+        include_pca=args.include_pca,
+        pca_dim=args.pca_dim,
+        minibatch_size=args.minibatch_size
+    )
+
+    print("Done.")
