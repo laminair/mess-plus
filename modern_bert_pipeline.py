@@ -33,7 +33,11 @@ def main(source_folder: str, target_folder: str, include_pca: bool = False, pca_
     print(f"Found {len(files)} files for processing.")
 
     for idx, file_name in enumerate(files):
-        df = pd.read_parquet(f"{source_folder}/{file_name}")
+        try:
+            df = pd.read_parquet(f"{source_folder}/{file_name}")
+        except pyarrow.lib.ArrowInvalid as e:
+            print(f"Error: Encountered error while reading file {file_name}. Need to check manually.")
+            print(e)
     
         tokenized_data = tokenizer.batch_encode_plus(
             df["input_text"].tolist(),
@@ -86,7 +90,7 @@ def main(source_folder: str, target_folder: str, include_pca: bool = False, pca_
             df.to_parquet(f"{target_folder}/{file_name}")
             print(f"Completed file #{idx} of {len(files)}.")
         except pyarrow.lib.ArrowInvalid as e:
-            print(f"Error: Encountered corrupt tensor during Arrow conversion for file {file_name}. Need to check manually. ")
+            print(f"Error: Encountered corrupt tensor during Arrow conversion for file {file_name}. Need to check manually.")
             print(e)
 
 
