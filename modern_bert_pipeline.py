@@ -2,6 +2,7 @@ import argparse
 import torch
 import os
 import pandas as pd
+import pyarrow
 
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 
@@ -81,8 +82,12 @@ def main(source_folder: str, target_folder: str, include_pca: bool = False, pca_
         if include_pca: 
             df["input_text_modern_bert_pca_{pca_dim}_dims"] = pd.Series(pca_list).astype(object)
 
-        df.to_parquet(f"{target_folder}/{file_name}")
-        print(f"Completed file #{idx} of {len(files)}.")
+        try:
+            df.to_parquet(f"{target_folder}/{file_name}")
+            print(f"Completed file #{idx} of {len(files)}.")
+        except pyarrow.lib.ArrowInvalid as e:
+            print(f"Error: Encountered corrupt tensor during Arrow conversion for file {file_name}. Need to check manually. ")
+            print(e)
 
 
 if __name__ == "__main__": 
