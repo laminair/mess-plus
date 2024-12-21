@@ -30,6 +30,7 @@ def main(source_folder: str, target_folder: str, include_pca: bool = False, pca_
     model = model.to(DEVICE)
 
     files = os.listdir(source_folder)
+    files = [f for f in files if f.endswith(".parquet")]
     print(f"Found {len(files)} files for processing.")
 
     for idx, file_name in enumerate(files):
