@@ -90,8 +90,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Embedding generator.')
     parser.add_argument('--source-folder', type=str, help='Path to folder that contains source files. Relative to script.')
     parser.add_argument('--target-folder', type=bool, default="store_false", help='Path to output folder. Relative to script.')
-    parser.add_argument('--include-pca', type=bool, default="store_false", help='Include PCA embedding.')
-    parser.add_argument('--pca-dim', type=int, default=25, help='Dimensions for PCA.')
+    parser.add_argument('--include-pca', type=bool, default="store_false", help='Include PCA embedding.', required=False)
+    parser.add_argument('--pca-dim', type=int, default=25, help='Dimensions for PCA.', required=False)
     # MBS = 64 requires about 20GB VRAM.
     parser.add_argument('--minibatch-size', type=int, default=64, help='Minibatch size to use with the Modern Bert Model.')
     args = parser.parse_args()
