@@ -29,7 +29,7 @@ with open(f"{Path.home()}/.cache/huggingface/token", "r") as f:
     f.close()
 
 MAX_SEQ_LEN = 8192
-NUM_SAMPLES = 10_000
+NUM_SAMPLES = 50_000
 NUM_BATCHES = 100
 SAMPLES_PER_BATCH = NUM_SAMPLES / NUM_BATCHES
 
@@ -101,12 +101,13 @@ def main(model_name: str):
     else:
         df = pd.DataFrame()
 
-    if not "input_text" in df.columns.tolist():
+    if "input_text" not in df.columns.tolist():
         df["input_text"] = [dataset[idx]['translation']['de'] for idx in range(len(dataset["translation"]))]
+        df["target_txt"] = [dataset[idx]['translation']['en'] for idx in range(len(dataset["translation"]))]
 
-    # When using Zeus, you must disable RAPL CPU monitoring as this will cause the program to fail. 
+    # When using Zeus, you must disable RAPL CPU monitoring as this will cause the program to fail.
     # Change "return True" to "return False" in file venv/lib/python3.12/site-packages/zeus/device/cpu/rapl.py (l. 137)
-    monitor = ZeusMonitor(gpu_indices=[torch.cuda.current_device()])
+    monitor = ZeusMonitor(gpu_indices=[i for i in range(NUM_GPUS)])
 
     if f"output_{model_name.replace('/', '_')}" in df.columns.tolist():
         print("Model outputs already captured in dataframe. Skipping...")
@@ -151,8 +152,6 @@ def main(model_name: str):
     df = df.drop("input_formatted", axis=1)
     df.to_csv(CSV_FILE_PATH, index=False)
 
-    print("Done.")
-
     return
 
 
@@ -165,4 +164,6 @@ if __name__ == "__main__":
     CSV_FILE_PATH = Path(f"{FILE_PATH}/data/simulation_data.csv")
 
     main(model_name=args.model_name)
+
+    print("Done.")
     
