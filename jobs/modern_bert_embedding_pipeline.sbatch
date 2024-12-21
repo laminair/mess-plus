@@ -22,8 +22,8 @@ enroot start \
     eoinference_v2 \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/python \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/modern_bert_pipeline.py \
-    --source-folder data/sentence_transformer_embeddings \
-    --target-folder data/modern_bert_embeddings \
+    --source-folder /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/data/sentence_transformer_embeddings \
+    --target-folder /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/data/modern_bert_embeddings \
     --include-pca False \
     --pca-dim 25 \
     --minibatch-size 192
