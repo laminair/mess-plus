@@ -19,6 +19,7 @@ import argparse
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+os.environ["VLLM_WORKER_MULTIPROC_METHOD"] = "spawn"
 
 
 print(f"CUDA available: {torch.cuda.is_available()}")
