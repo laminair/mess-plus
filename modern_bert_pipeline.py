@@ -38,6 +38,7 @@ def main(source_folder: str, target_folder: str, include_pca: bool = False, pca_
         except pyarrow.lib.ArrowInvalid as e:
             print(f"Error: Encountered error while reading file {file_name}. Need to check manually.")
             print(e)
+            continue
     
         tokenized_data = tokenizer.batch_encode_plus(
             df["input_text"].tolist(),
