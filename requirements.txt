@@ -124,3 +124,4 @@ xxhash==3.5.0
 yarl==1.18.3
 zeus-ml==0.10.1
 zipp==3.21.0
+-e git+ssh://git@github.com/laminair/lm-evaluation-harness.git@b86aa2131fc34405d2245edb0ec4b13933afec8c#egg=lm_eval&subdirectory=../../lm-eval-harness
