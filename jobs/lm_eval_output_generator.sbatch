@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -p lrz-hgx-h100-92x4
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:2
 #SBATCH --time=02:00:00
 #SBATCH -o output_%A.out
 
@@ -20,10 +20,18 @@ enroot start \
     --mount /dss/dsshome1/09/ge56heh2/ \
     --mount /sbin \
     eoinference_v3 \
-    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/python \
-    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/modern_bert_pipeline.py \
-    --source-folder /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/data/sentence_transformer_embeddings \
-    --target-folder /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/data/modern_bert_embeddings \
-    --minibatch-size 192
+    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/accelerate launch \
+    --multi_gpu \
+    --num_processes=2 \
+    -m lm_eval \
+    --model hf \
+    --model_args pretrained=meta-llama/Llama-3.2-1B \
+    --tasks logiqa2 \
+    --device cuda:0 \
+    --batch_size auto:4 \
+    --trust_remote_code \
+    --log_samples \
+    --limit 20 \
+    --output_path my_logs.json
 
 
