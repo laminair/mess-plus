@@ -23,6 +23,7 @@ docstring_parser==0.16
 einops==0.8.0
 exceptiongroup==1.2.2
 fastapi==0.115.6
+fbgemm_gpu==1.0.0
 filelock==3.16.1
 frozenlist==1.5.0
 fsspec==2024.9.0
