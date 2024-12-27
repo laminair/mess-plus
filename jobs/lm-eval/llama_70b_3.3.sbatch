@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -p lrz-hgx-h100-92x4
 #SBATCH --gres=gpu:4
-#SBATCH --time=04:00:00
+#SBATCH --time=02:30:00
 #SBATCH -o output_%A.out
 
 cd "$(dirname "$0")"
@@ -25,11 +25,11 @@ enroot start \
     --num_processes=4 \
     -m lm_eval \
     --model hf \
-    --model_args pretrained=meta-llama/Llama-3.1-405B-FP8,trust_remote_code=True,parallelize=True \
+    --model_args pretrained=meta-llama/Llama-3.3-70B,trust_remote_code=True,parallelize=True \
     --tasks logiqa2,boolq,mmlu \
     --device cuda:0 \
     --batch_size auto:4 \
     --trust_remote_code \
     --log_samples \
     --limit 20 \
-    --output_path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/lm_eval_results/llama-405b_v2
+    --output_path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/lm_eval_results/llama-70b_v2

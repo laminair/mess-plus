@@ -9,7 +9,7 @@ cd "$(dirname "$0")"
 nvidia-smi
 enroot create /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/eoinference_v4.sqsh
 
-# Train
+# Download Llama 3.2 1B
 enroot start \
     --root \
     -e HF_TOKEN_PATH=/dss/dsshome1/09/ge56heh2/.cache/huggingface/token \
@@ -25,4 +25,4 @@ enroot start \
     --repo-type model \
     --local-dir-use-symlinks False
 
-sbatch /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/lm_eval_output_generator_llama1b.sbatch
+sbatch /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/jobs/lm-eval/llama_1b_3.2.sbatch
