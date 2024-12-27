@@ -25,7 +25,7 @@ enroot start \
     --num_processes=2 \
     -m lm_eval \
     --model hf \
-    --model_args pretrained=meta-llama/Llama-3.2-1B \
+    --model_args pretrained=meta-llama/Llama-3.2-1B,trust_remote_code=True \
     --tasks logiqa2 \
     --device cuda:0 \
     --batch_size auto:4 \
