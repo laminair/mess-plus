@@ -1,4 +1,5 @@
 #!/bin/bash
+#SBATCH -a pn72yi
 #SBATCH -p lrz-hgx-h100-92x4
 #SBATCH --gres=gpu:2
 #SBATCH --time=01:00:00
@@ -15,7 +16,6 @@ enroot start \
     -e HF_TOKEN_PATH=/dss/dsshome1/09/ge56heh2/.cache/huggingface/token \
     -e HF_HOME=/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/.cache/hf/misc \
     -e HF_DATASETS_CACHE=/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/.cache/datasets \
-    -e TRANSFORMERS_CACHE=/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/.cache/models \
     --mount /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/ \
     --mount /dss/dsshome1/09/ge56heh2/ \
     --mount /sbin \
@@ -25,7 +25,7 @@ enroot start \
     --num_processes=2 \
     -m lm_eval \
     --model hf \
-    --model_args pretrained=meta-llama/Llama-3.2-1B,trust_remote_code=True,parallelize=True \
+    --model_args pretrained=meta-llama/Llama-3.2-1B-Instruct,trust_remote_code=True,parallelize=True \
     --tasks logiqa2,boolq,mmlu \
     --device cuda:0 \
     --batch_size auto:4 \
