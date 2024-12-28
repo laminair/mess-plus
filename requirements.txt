@@ -23,6 +23,7 @@ docstring_parser==0.16
 einops==0.8.0
 exceptiongroup==1.2.2
 fastapi==0.115.6
+fbgemm_gpu==1.0.0
 filelock==3.16.1
 frozenlist==1.5.0
 fsspec==2024.9.0
@@ -124,4 +125,3 @@ xxhash==3.5.0
 yarl==1.18.3
 zeus-ml==0.10.1
 zipp==3.21.0
--e git+ssh://git@github.com/laminair/lm-evaluation-harness.git@b86aa2131fc34405d2245edb0ec4b13933afec8c#egg=lm_eval&subdirectory=../../lm-eval-harness
