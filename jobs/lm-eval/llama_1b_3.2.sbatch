@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -a pn72yi
+#SBATCH -A pn72yi
 #SBATCH -p lrz-hgx-h100-92x4
 #SBATCH --gres=gpu:2
 #SBATCH --time=01:00:00
