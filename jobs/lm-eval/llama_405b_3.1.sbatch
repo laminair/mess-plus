@@ -20,7 +20,6 @@ enroot start \
     --mount /sbin \
     --mount /usr/share/ \
     eoinference_v5 \
-    bash
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/accelerate launch \
     --multi_gpu \
     --num_processes=4 \
