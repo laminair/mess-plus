@@ -22,10 +22,7 @@ enroot start \
     --mount /sbin \
     --mount /usr/share/ \
     eoinference_v5 \
-    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/accelerate launch \
-    --multi_gpu \
-    --num_processes=4 \
-    -m lm_eval \
+    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/lm_eval \
     --model hf \
     --model_args pretrained=meta-llama/Llama-3.1-405B-Instruct-FP8,trust_remote_code=True,parallelize=True \
     --tasks logiqa2,boolq,mmlu \
