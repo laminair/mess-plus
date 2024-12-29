@@ -7,7 +7,7 @@
 cd "$(dirname "$0")"
 
 nvidia-smi
-enroot create /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/eoinference_v4.sqsh
+enroot create /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/eoinference_v5.sqsh
 
 # Train
 enroot start \
@@ -18,7 +18,8 @@ enroot start \
     --mount /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/ \
     --mount /dss/dsshome1/09/ge56heh2/ \
     --mount /sbin \
-    eoinference_v4 \
+    --mount /usr/share/ \
+    eoinference_v5 \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/accelerate launch \
     --multi_gpu \
     --num_processes=2 \

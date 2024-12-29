@@ -7,7 +7,7 @@
 cd "$(dirname "$0")"
 
 nvidia-smi
-enroot create /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/eoinference_v4.sqsh
+enroot create /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/eoinference_v5.sqsh
 
 # Download meta-llama/Llama-3.1-405B-FP8
 enroot start \
@@ -18,7 +18,8 @@ enroot start \
     --mount /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/ \
     --mount /dss/dsshome1/09/ge56heh2/ \
     --mount /sbin \
-    eoinference_v4 \
+    --mount /usr/share/ \
+    eoinference_v5 \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/huggingface-cli \
     download meta-llama/Llama-3.1-405B-Instruct-FP8 \
     --repo-type model \
