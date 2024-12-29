@@ -25,11 +25,9 @@ enroot start \
     --num_processes=4 \
     -m lm_eval \
     --model hf \
-    --model_args pretrained=meta-llama/Llama-3.3-70B-Instruct,trust_remote_code=True,parallelize=True \
+    --model_args pretrained=meta-llama/Llama-3.3-70B-Instruct,trust_remote_code=True \
     --tasks logiqa2,boolq,mmlu \
-    --device cuda:0 \
     --batch_size auto:4 \
     --trust_remote_code \
     --log_samples \
-    --limit 20 \
     --output_path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/lm_eval_results
