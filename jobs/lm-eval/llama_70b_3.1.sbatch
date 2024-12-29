@@ -19,7 +19,7 @@ enroot start \
     --mount /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/ \
     --mount /dss/dsshome1/09/ge56heh2/ \
     eoinference_v5 \
-    -m lm_eval \
+    lm_eval \
     --model hf \
     --model_args pretrained=meta-llama/Llama-3.1-70B-Instruct,trust_remote_code=True,parallelize=True \
     --tasks logiqa2,boolq,mmlu \
