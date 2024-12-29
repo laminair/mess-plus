@@ -7,7 +7,7 @@
 #SBATCH -o output_%A.out
 #SBATCH --exclude lrz-hgx-h100-030
 
-cd "$(dirname "$0")"
+#### cd "$(dirname "$0")"
 
 export MASTER_PORT=12340
 export WORLD_SIZE=8
@@ -25,7 +25,7 @@ srun --container-image='/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh
      --num_processes 4 \
      --main_process_ip "$MASTER_ADDR" \
      --main_process_port $MASTER_PORT \
-     --machine_rank \$NODE_RANK \
+     --machine_rank 0 \
      --rdzv_backend static \
      --max_restarts 0 \
      lm_eval \
@@ -48,7 +48,7 @@ srun --container-image='/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh
      --num_processes 4 \
      --main_process_ip "$MASTER_ADDR" \
      --main_process_port $MASTER_PORT \
-     --machine_rank \$NODE_RANK \
+     --machine_rank 1 \
      --rdzv_backend static \
      --max_restarts 0 \
      lm_eval \
