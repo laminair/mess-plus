@@ -9,7 +9,7 @@
 
 #### cd "$(dirname "$0")"
 
-export MASTER_PORT=12340
+export MASTER_PORT=13567
 export WORLD_SIZE=8
 
 master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
