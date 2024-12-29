@@ -24,7 +24,7 @@ enroot start \
     eoinference_v5 \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/lm_eval \
     --model vllm \
-    --model_args pretrained=meta-llama/Llama-3.1-405B-Instruct-FP8,tensor_parallel_size=4,dtype=auto,gpu_memory_utilization=0.95 \
+    --model_args pretrained=meta-llama/Llama-3.1-405B-Instruct-FP8,tensor_parallel_size=4,dtype=auto,gpu_memory_utilization=0.98 \
     --tasks logiqa2,boolq,mmlu \
     --batch_size auto \
     --trust_remote_code \
