@@ -7,13 +7,13 @@
 #SBATCH -o output_%A.out
 #SBATCH --exclude lrz-hgx-h100-030
 
+cd "$(dirname "$0")"
+
 export MASTER_PORT=12340
 export WORLD_SIZE=8
 
 master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export MASTER_ADDR=$master_addr
-
-cd "$(dirname "$0")"
 
 srun --container-image='/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/eoinference_v5.sqsh' \
      --container-mounts=/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/:/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/,/dss/dsshome1/09/ge56heh2/:/dss/dsshome1/09/ge56heh2/,/sbin:/sbin,/usr/share/:/usr/share/ \
