@@ -32,4 +32,4 @@ enroot start \
     --trust_remote_code \
     --log_samples \
     --limit 20 \
-    --output_path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/lm_eval_results/llama-70b_v1
+    --output_path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/lm_eval_results
