@@ -27,7 +27,7 @@ enroot start \
     --num_processes=4 \
     -m lm_eval \
     --model hf \
-    --model_args pretrained=meta-llama/Llama-3.1-405B-Instruct-FP8,trust_remote_code=True \
+    --model_args pretrained=meta-llama/Llama-3.1-405B-Instruct-FP8,trust_remote_code=True,parallelize=True \
     --tasks logiqa2,boolq,mmlu \
     --batch_size auto:4 \
     --trust_remote_code \
