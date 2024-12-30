@@ -2,6 +2,10 @@
 
 
 ## Setup procedure
+
+We use the `nvcr.io/nvidia/pytorch:24.09-py3` container for all of our experiments. 
+The container is available from the [Nvidia NGC Catalog](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/pytorch/tags).
+
 ```
 git clone https://github.com/ryanzhangofficial/Energy-Optimal-Inferencing.git
 git submodule init 

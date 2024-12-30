@@ -3,11 +3,12 @@
 #SBATCH --gres=gpu:4
 #SBATCH --time=06:00:00
 #SBATCH -o output_%A.out
+#SBATCH --exclude lrz-hgx-h100-030
 
 cd "$(dirname "$0")"
 
 nvidia-smi
-enroot create /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/eoinference_v4.sqsh
+enroot create /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/eoinference_v5.sqsh
 
 # Train
 enroot start \
@@ -15,21 +16,17 @@ enroot start \
     -e HF_TOKEN_PATH=/dss/dsshome1/09/ge56heh2/.cache/huggingface/token \
     -e HF_HOME=/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/.cache/hf/misc \
     -e HF_DATASETS_CACHE=/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/.cache/datasets \
-    -e TRANSFORMERS_CACHE=/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/.cache/models \
+    -e HF_DATASETS_TRUST_REMOTE_CODE=True \
     --mount /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/ \
     --mount /dss/dsshome1/09/ge56heh2/ \
     --mount /sbin \
-    eoinference_v4 \
-    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/accelerate launch \
-    --multi_gpu \
-    --num_processes=4 \
-    -m lm_eval \
-    --model hf \
-    --model_args pretrained=meta-llama/Llama-3.1-405B-FP8,trust_remote_code=True,parallelize=True \
+    --mount /usr/share/ \
+    eoinference_v5 \
+    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/lm_eval \
+    --model vllm \
+    --model_args pretrained=meta-llama/Llama-3.1-405B-Instruct-FP8,tensor_parallel_size=4,pipeline_parallel_size=2,dtype=auto,gpu_memory_utilization=0.98,max_model_len=2048 \
     --tasks logiqa2,boolq,mmlu \
-    --device cuda:0 \
-    --batch_size auto:4 \
+    --batch_size auto \
     --trust_remote_code \
     --log_samples \
-    --limit 20 \
-    --output_path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/lm_eval_results/llama-405b
+    --output_path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/lm_eval_results
