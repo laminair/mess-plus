@@ -29,20 +29,30 @@ def main(source_folder: str, target_folder: str, include_pca: bool = False, pca_
     model = AutoModelForMaskedLM.from_pretrained(MODEL_NAME)
     model = model.to(DEVICE)
 
-    files = os.listdir(source_folder)
-    files = [f for f in files if f.endswith(".parquet")]
-    print(f"Found {len(files)} files for processing.")
+    all_files = []
+    for root, dirs, files in os.walk(source_folder):
+        for f in files:
+            if f.endswith(".csv"):
+                full_path = os.path.join(root, f)
+                all_files.append(full_path)
 
-    for idx, file_name in enumerate(files):
+    print(f"Found {len(all_files)} CSV files for processing.")
+
+    for idx, file_path in enumerate(all_files):
+        rel_path = os.path.relpath(file_path, source_folder)
+        out_path = os.path.join(target_folder, out_file)
+
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        
         try:
-            df = pd.read_parquet(f"{source_folder}/{file_name}")
-        except pyarrow.lib.ArrowInvalid as e:
-            print(f"Error: Encountered error while reading file {file_name}. Need to check manually.")
-            print(e)
+            df = pd.read_csv(file_path)
+        except Exception as e:
+            print(f"Error reading {file_path}: {e}")
             continue
-    
+
+        text_data = df["input_text"].astype(str).tolist()
         tokenized_data = tokenizer.batch_encode_plus(
-            df["input_text"].tolist(),
+            text_data,
             truncation=True,   
             padding='max_length',
             return_tensors='pt',  	
@@ -89,11 +99,10 @@ def main(source_folder: str, target_folder: str, include_pca: bool = False, pca_
             df["input_text_modern_bert_pca_{pca_dim}_dims"] = pd.Series(pca_list).astype(object)
 
         try:
-            df.to_parquet(f"{target_folder}/{file_name}")
-            print(f"Completed file #{idx} of {len(files)}.")
-        except pyarrow.lib.ArrowInvalid as e:
-            print(f"Error: Encountered corrupt tensor during Arrow conversion for file {file_name}. Need to check manually.")
-            print(e)
+            df.to_csv(out_path, index=False)
+            print(f"Completed file #{idx+1} of {len(all_files)}: {out_path}")
+        except Exception as e:
+            print(f"Error saving CSV for {file_path}: {e}")
 
 
 if __name__ == "__main__": 
