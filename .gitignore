@@ -2,9 +2,13 @@ venv/
 .idea/
 .ipynb_checkpoints/
 wandb/
+__pycache__/
 
 data/
 datasets/
 legacy/figures/
 
 *.zip
+*.sqsh
+*.out
+*.csv

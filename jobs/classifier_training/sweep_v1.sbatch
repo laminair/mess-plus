@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -p lrz-hgx-h100-92x4
 #SBATCH --gres=gpu:1
-#SBATCH --time=01:00:00
+#SBATCH --time=04:00:00
 #SBATCH -o output_%A.out
 #SBATCH --exclude lrz-hgx-h100-030
 
@@ -22,7 +22,6 @@ enroot start \
     --mount /sbin \
     --mount /usr/share/ \
     eoinference_v5 \
-    bash
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/python \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/classifier/sweeper.py \
     --config config/classifier/sweep_v1.yaml
