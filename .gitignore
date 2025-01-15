@@ -2,3 +2,9 @@ venv/
 .idea/
 .ipynb_checkpoints/
 wandb/
+
+data/
+datasets/
+legacy/figures/
+
+*.zip
