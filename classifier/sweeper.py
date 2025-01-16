@@ -24,9 +24,15 @@ MODEL_NAME = "answerdotai/ModernBERT-base"
 
 def train(config=None):
 
-    with wandb.init(config=config):
+    with wandb.init(
+        config=config,
+        name=f"lr_{config.learning_rate}-"
+             f"hls_{config.hidden_layer_shape}-"
+             f"optim_{config.optimizer}-"
+             f"epo_{config.epoch}-"
+             f"mbs_{config.minibatch_size}"
+    ):
         config = wandb.config
-        print(config)
         lit_model = MESSRouter(
             base_model=base_model,
             model_list=inference_models,
@@ -82,5 +88,5 @@ if __name__ == "__main__":
     tokenizer = transformers.AutoTokenizer.from_pretrained(MODEL_NAME)
     base_model = transformers.AutoModel.from_pretrained(MODEL_NAME)
 
-    sweep_id = wandb.sweep(sweep_config, project='mess-plus-classifier-boolq-sweep-v1')
+    sweep_id = wandb.sweep(sweep_config, project='mess-plus-preference-classifier-boolq-sweep-v2')
     wandb.agent(sweep_id, function=train)
