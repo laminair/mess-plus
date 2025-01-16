@@ -9,6 +9,9 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
 
 
+NUM_WORKERS = 20 if psutil.cpu_count(False) > 21 else (psutil.cpu_count(False) - 2)
+
+
 def pre_process(text):
     text = BeautifulSoup(text).get_text()
     # fetch alphabetic characters
@@ -106,7 +109,7 @@ class MESSLightningDataloader(pl.LightningDataModule):
             self.trainset,
             batch_size=self.batch_size,
             shuffle=True,
-            num_workers=(psutil.cpu_count(False) - 2)
+            num_workers=NUM_WORKERS
         )
 
     def val_dataloader(self):
@@ -114,7 +117,7 @@ class MESSLightningDataloader(pl.LightningDataModule):
             self.valset,
             batch_size=self.batch_size,
             shuffle=False,
-            num_workers=(psutil.cpu_count(False) - 2)
+            num_workers=NUM_WORKERS
         )
 
     def test_dataloader(self):
@@ -122,5 +125,5 @@ class MESSLightningDataloader(pl.LightningDataModule):
             self.testset,
             batch_size=self.batch_size,
             shuffle=False,
-            num_workers=(psutil.cpu_count(False) - 2)
+            num_workers=NUM_WORKERS
         )
