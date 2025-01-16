@@ -6,10 +6,10 @@ parameters:
   epoch:
     values: [10, 25, 50]
   hidden_layer_shape:
-    values: [[512], [256], [128]]
+    values: [[1024], [512], [256], [128]]
   learning_rate:
-    values: [0.0001, 0.001, 0.01, 0.1]
+    values: [0.0001, 0.00001]
   minibatch_size:
-    values: [8, 16, 32, 64]
+    values: [8, 16, 32, 64, 128]
   optimizer:
     values: ["sgd", "adam"]
