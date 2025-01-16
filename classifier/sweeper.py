@@ -1,6 +1,7 @@
 import argparse
 import logging
-
+import numpy as np
+import random
 import pytorch_lightning as pl
 import pathlib
 import pandas as pd
@@ -24,15 +25,20 @@ MODEL_NAME = "answerdotai/ModernBERT-base"
 
 def train(config=None):
 
-    with wandb.init(
-        config=config,
-        name=f"lr_{config.learning_rate}-"
-             f"hls_{config.hidden_layer_shape}-"
-             f"optim_{config.optimizer}-"
-             f"epo_{config.epoch}-"
-             f"mbs_{config.minibatch_size}"
-    ):
+    # Set seeds
+    random.seed(42)
+    np.random.seed(42)
+    pl.seed_everything(42, workers=True)
+
+    with wandb.init(config=config) as run:
         config = wandb.config
+
+        run.name = (f"lr_{config.learning_rate}-"
+                    f"hls_{config.hidden_layer_shape}-"
+                    f"optim_{config.optimizer}-"
+                    f"epo_{config.epoch}-"
+                    f"mbs_{config.minibatch_size}")
+
         lit_model = MESSRouter(
             base_model=base_model,
             model_list=inference_models,
@@ -46,8 +52,7 @@ def train(config=None):
         lit_dataloader = MESSLightningDataloader(
             df=df,
             tokenizer=tokenizer,
-            batch_size=config.minibatch_size,
-            seed=42
+            batch_size=config.minibatch_size
         )
 
         checkpointing_callback = ModelCheckpoint(
