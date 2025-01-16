@@ -1,4 +1,5 @@
 import pandas as pd
+import psutil
 import pytorch_lightning as pl
 import re
 import torch
@@ -101,10 +102,25 @@ class MESSLightningDataloader(pl.LightningDataModule):
         self.testset = ClassificationDataset(x=self.x_test, y=self.y_test, tokenizer=self.tokenizer)
 
     def train_dataloader(self):
-        return DataLoader(self.trainset, batch_size=self.batch_size, shuffle=True)
+        return DataLoader(
+            self.trainset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=(psutil.cpu_count(False) - 2)
+        )
 
     def val_dataloader(self):
-        return DataLoader(self.valset, batch_size=self.batch_size, shuffle=True)
+        return DataLoader(
+            self.valset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=(psutil.cpu_count(False) - 2)
+        )
 
     def test_dataloader(self):
-        return DataLoader(self.testset, batch_size=self.batch_size, shuffle=True)
+        return DataLoader(
+            self.testset,
+            batch_size=self.batch_size,
+            shuffle=False,
+            num_workers=(psutil.cpu_count(False) - 2)
+        )
