@@ -99,57 +99,18 @@ class MESSRouter(pl.LightningModule):
         return {"loss": loss, "predictions": probs, "labels": labels}
 
     def validation_step(self, batch, batch_idx):
-        input_ids = batch['input_ids']
-        attention_mask = batch['attention_mask']
-        labels = batch['label']
-
-        probs = self(input_ids, attention_mask)
-        loss = self.criterion(probs, labels)
-
-        metrics, conf_mx = compute_scores(
-            probs,
-            labels,
-            stage="val",
-            include_confusion_matrix=False
-        )
-
-        metrics.update({
-            "batch_idx": batch_idx,
-            "stage": "val"
-        })
-
-        self.metrics_df = pd.concat([self.metrics_df, pd.DataFrame(metrics, index=[0])])
-
-        self.val_losses.append(loss)
-        self.log("val_loss", loss, prog_bar=True, logger=False)
-        return loss
+        self._step(batch, batch_idx, stage="val")
 
     def on_validation_epoch_end(self):
-
-        stage = "val"
-
-        numeric_cols = self.metrics_df.columns.tolist()
-        numeric_cols = [i for i in self.metrics_df.columns.tolist() if stage in i]
-        epoch_metrics = self.metrics_df.loc[self.metrics_df["stage"] == "val", numeric_cols].mean()
-        epoch_metrics = epoch_metrics.to_dict()
-        epoch_metrics[f"{stage}/loss"] = np.mean([i.cpu().item() for i in self.val_losses])
-
-        logging.info(epoch_metrics)
-        self.log_dict(epoch_metrics)
-
-        self.metrics_df = pd.DataFrame()
-        self.val_losses = []
+        self._on_epoch_end_shared(stage="val")
 
     def test_step(self, batch, batch_idx):
-        input_ids = batch['input_ids']
-        attention_mask = batch['attention_mask']
-        labels = batch['label']
+        # The stage is intentionally set to "val" to capture the model accuracy before starting the training.
+        self._step(batch, batch_idx, stage="val")
 
-        outputs = self(input_ids, attention_mask)
-        loss = self.criterion(outputs, labels)
-        self.log('test_loss', loss, prog_bar=True, logger=True)
-
-        return loss
+    def on_test_epoch_end(self) -> None:
+        # The stage is intentionally set to "val" to capture the model accuracy before starting the training.
+        self._on_epoch_end_shared(stage="val")
 
     def configure_optimizers(self):
         if self.optim_name == "sgd":
@@ -160,3 +121,42 @@ class MESSRouter(pl.LightningModule):
             raise NotImplementedError("Optimizer not configured.")
 
         return optimizer
+
+    def _step(self, batch, batch_idx, stage):
+        input_ids = batch['input_ids']
+        attention_mask = batch['attention_mask']
+        labels = batch['label']
+
+        probs = self(input_ids, attention_mask)
+        loss = self.criterion(probs, labels)
+
+        metrics, conf_mx = compute_scores(
+            probs,
+            labels,
+            stage=stage,
+            include_confusion_matrix=False
+        )
+
+        metrics.update({
+            "batch_idx": batch_idx,
+            "stage": stage
+        })
+
+        self.metrics_df = pd.concat([self.metrics_df, pd.DataFrame(metrics, index=[0])])
+
+        self.val_losses.append(loss)
+        self.log(f"{stage}_loss", loss, prog_bar=True, logger=False)
+        return loss
+
+    def _on_epoch_end_shared(self, stage: str):
+
+        numeric_cols = [i for i in self.metrics_df.columns.tolist() if stage in i]
+        epoch_metrics = self.metrics_df.loc[self.metrics_df["stage"] == stage, numeric_cols].mean()
+        epoch_metrics = epoch_metrics.to_dict()
+        epoch_metrics[f"{stage}/loss"] = np.mean([i.cpu().item() for i in self.val_losses])
+
+        logging.info(epoch_metrics)
+        self.log_dict(epoch_metrics)
+
+        self.metrics_df = pd.DataFrame()
+        self.val_losses = []

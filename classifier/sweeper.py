@@ -78,6 +78,7 @@ def train(config=None):
             callbacks=[checkpointing_callback]
         )
 
+        trainer.test(lit_model, lit_dataloader)
         trainer.fit(lit_model, lit_dataloader)
         logger.info(f"The best model can be found under: {checkpointing_callback.best_model_path}.")
 
@@ -106,7 +107,7 @@ if __name__ == "__main__":
         df,
         benchmark_dataset=pipeline_config["dataset"],
         dataset_name_matching=pipeline_config["dataset_name_matching"],
-        base_model_name=pipeline_config["base_model"],
+        base_model_name=pipeline_config["inference_base_model_name"],
         models_to_remove=set(pipeline_config["models_to_remove"]),
         limit_nb_samples=pipeline_config["limit_samples"],
         seed=pipeline_config["seed"]
@@ -116,8 +117,8 @@ if __name__ == "__main__":
 
     logger.info(f"Training on {num_inference_models} models: {inference_models}.")
 
-    tokenizer = transformers.AutoTokenizer.from_pretrained(pipeline_config["base_model"])
-    base_model = transformers.AutoModel.from_pretrained(pipeline_config["base_model"])
+    tokenizer = transformers.AutoTokenizer.from_pretrained(pipeline_config["classifier_base_model"])
+    base_model = transformers.AutoModel.from_pretrained(pipeline_config["classifier_base_model"])
 
     sweep_id = wandb.sweep(sweep_config, project=args.wandb_project)
     wandb.agent(sweep_id, function=train)
