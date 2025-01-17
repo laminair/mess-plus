@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH -p lrz-hgx-h100-92x4
 #SBATCH --gres=gpu:1
-#SBATCH --time=08:00:00
-#SBATCH -o output_%A.out
+#SBATCH --time=16:00:00
+#SBATCH -o output_boolq_%A.out
 #SBATCH --exclude lrz-hgx-h100-030
 
 cd "$(dirname "$0")"
@@ -24,5 +24,6 @@ enroot start \
     eoinference_v5 \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/python \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/classifier/sweeper.py \
-    --config config/classifier/sweep_v1.yaml \
-    --wandb-project mess-plus-preference-classifier-boolq-sweep-v3
+    --pipeline-config config/classifier/boolq/config.yaml \
+    --sweep-config config/classifier/boolq/architecture_sweep.yaml \
+    --wandb-project mess-plus-preference-classifier-boolq-architecture-sweep-v1

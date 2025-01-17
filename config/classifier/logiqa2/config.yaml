@@ -1,0 +1,11 @@
+dataset: "logiqa2"
+dataset_path: "datasets/csv/all_data.csv"
+dataset_name_matching: exact
+limit_samples: 25000
+models_to_remove: ["llama_03B_32", "llama_70B_31"]
+
+seed: 42
+base_model: "answerdotai/ModernBERT-base"
+
+# Please see architecture_sweep.yaml and hyperparameter_sweep.yaml for more configuration details.
+# W&B does not allow to keep the config above in the same file.

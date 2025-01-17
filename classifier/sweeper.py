@@ -14,7 +14,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 from utils.data_management import MESSLightningDataloader
 from utils.modelling_mess_plus_classifier import MESSRouter
-from utils.experimentation import filter_models_from_dataset
+from utils.experimentation import filter_dataset
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,16 +30,6 @@ logger = logging.getLogger(__name__)
 
 FILE_PATH = pathlib.Path(__file__).parent
 PROJECT_ROOT_PATH = pathlib.Path(__file__).parent.parent.resolve()
-
-SEED = 42
-
-DATASET_PATH = "datasets/csv/all_data.csv"
-DATASET_NAME = "logiqa2"
-LIMIT_NB_SAMPLES = 10_000
-MODEL_NAME = "answerdotai/ModernBERT-base"
-
-BASE_MODEL_NAME = "llama"
-MODELS_TO_REMOVE = {"llama_03B_32", "llama_70B_31"}
 
 
 def train(config=None):
@@ -96,31 +86,38 @@ def train(config=None):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog='MESS+ Classifier Sweeper')
-    parser.add_argument("-c", "--config", help="Path to yaml config (relative to project root)")
+    parser.add_argument("-pc", "--pipeline-config", help="Path to pipeline config (relative to project root)")
+    parser.add_argument("-sc", "--sweep-config", help="Path to yaml config (relative to project root)")
     parser.add_argument("-wp", "--wandb-project", help="Project name to use on the W&B console")
 
     args = parser.parse_args()
 
-    with open(f"{PROJECT_ROOT_PATH}/{args.config}", "r") as cfg_file:
+    with open(f"{PROJECT_ROOT_PATH}/{args.pipeline_config}", "r") as pipe_cfg:
+        pipeline_config = yaml.safe_load(pipe_cfg)
+        SEED = pipeline_config["seed"]
+        pipe_cfg.close()
+
+    with open(f"{PROJECT_ROOT_PATH}/{args.sweep_config}", "r") as cfg_file:
         sweep_config = yaml.safe_load(cfg_file)
         cfg_file.close()
 
-    df = pd.read_csv(f"{PROJECT_ROOT_PATH}/{DATASET_PATH}", low_memory=False)
-    df = df.loc[df["dataset"] == DATASET_NAME]
-    df = filter_models_from_dataset(
+    df = pd.read_csv(f"{PROJECT_ROOT_PATH}/{pipeline_config['dataset_path']}", low_memory=False)
+    df = filter_dataset(
         df,
-        base_model_name=BASE_MODEL_NAME,
-        models_to_remove=MODELS_TO_REMOVE,
-        limit_nb_samples=LIMIT_NB_SAMPLES,
-        seed=SEED
+        benchmark_dataset=pipeline_config["dataset_path"],
+        dataset_name_matching=pipeline_config["dataset_name_matching"],
+        base_model_name=pipeline_config["base_model"],
+        models_to_remove=set(pipeline_config["models_to_remove"]),
+        limit_nb_samples=pipeline_config["limit_nb_samples"],
+        seed=pipeline_config["seed"]
     )
     inference_models = [i for i in df.columns if "llama_" in i]
     num_inference_models = len(inference_models)
 
     logger.info(f"Training on {num_inference_models} models: {inference_models}.")
 
-    tokenizer = transformers.AutoTokenizer.from_pretrained(MODEL_NAME)
-    base_model = transformers.AutoModel.from_pretrained(MODEL_NAME)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(pipeline_config["base_model"])
+    base_model = transformers.AutoModel.from_pretrained(pipeline_config["base_model"])
 
     sweep_id = wandb.sweep(sweep_config, project=args.wandb_project)
     wandb.agent(sweep_id, function=train)

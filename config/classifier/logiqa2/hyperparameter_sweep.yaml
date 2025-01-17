@@ -4,12 +4,12 @@ metric:
   name: "val/loss"
 parameters:
   epoch:
-    values: [10, 25]
+    values: [1]
   hidden_layer_shape:
-    values: [[1024], [512], [256], [128]]
+    values: [[512], [256], [128]]
   learning_rate:
-    values: [0.001, 0.0001, 0.00001]
+    values: [0.0001, 0.00001, 0.000001]
   minibatch_size:
-    values: [32, 64]
+    values: [1]
   optimizer:
     values: ["sgd", "adam"]
