@@ -78,6 +78,7 @@ def train(config=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog='MESS+ Classifier Sweeper')
     parser.add_argument("-c", "--config", help="Path to yaml config (relative to project root)")
+    parser.add_argument("-wp", "--wandb-project", help="Project name to use on the W&B console")
 
     args = parser.parse_args()
 
@@ -93,5 +94,10 @@ if __name__ == "__main__":
     tokenizer = transformers.AutoTokenizer.from_pretrained(MODEL_NAME)
     base_model = transformers.AutoModel.from_pretrained(MODEL_NAME)
 
-    sweep_id = wandb.sweep(sweep_config, project='mess-plus-preference-classifier-boolq-sweep-v2')
+    sweep_id = wandb.sweep(sweep_config, project=args.wandb_project)
     wandb.agent(sweep_id, function=train)
+
+    api = wandb.Api()
+    sweep = api.sweep(path=f"{api.default_entity}/{args.wandb_project}/sweeps/{sweep_id}")
+    best_run = sweep.best_run()
+    logging.info(f"Best run: {best_run}. Done.")
