@@ -380,7 +380,7 @@ if __name__ == "__main__":
 
     df = pd.DataFrame(dummy_dataset)
 
-    config_file_path = "config/messplus/baseline.yaml"
+    config_file_path = "config/messplus/boolq_baseline.yaml"
 
     selector = MessPlusAutomaticModelSelector(
         config_file_path=config_file_path

@@ -1,0 +1,29 @@
+run_name: "baseline"
+
+model_zoo:
+  meta-llama/Llama-3.2-1B-Instruct:
+    category: "small"
+    gpu_indices: [0]
+    max_seq_len: 2048
+  meta-llama/Llama-3.1-8B-Instruct:
+    category: "medium"
+    gpu_indices: [0]
+    max_seq_len: 2048
+  meta-llama/Llama-3.3-70B-Instruct:
+    category: "large"
+    gpu_indices: [0]
+    max_seq_len: 2048
+
+classifier_model:
+  model_id: "answerdotai/ModernBERT-base"
+  max_seq_len: 1024
+  classifier_layer_hidden_dims: [512]
+  optimizer: "adam"
+  beta1: 0.9
+  beta2: 0.99
+  lr: 0.0001
+  minibatch_size: 1
+
+algorithm:
+  alpha: 0.8
+  c: 1

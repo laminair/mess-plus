@@ -49,10 +49,15 @@ def load_data(df, seed, test_val_dataset_size: float = 0.15):
     x_test = x_test.tolist()
     y_test = y_test.tolist()
 
-    # Convert string elements to list
-    y_train = [eval(i) for i in y_train]
-    y_val = [eval(i) for i in y_val]
-    y_test = [eval(i) for i in y_test]
+    # Convert string elements to list if necessary.
+    if type(y_train[0]) is str:
+        y_train = [eval(i) for i in y_train]
+
+    if type(y_val[0]) is str:
+        y_val = [eval(i) for i in y_val]
+
+    if type(y_test[0]) is str:
+        y_test = [eval(i) for i in y_test]
 
     return x_train, x_val, x_test, y_train, y_val, y_test
 

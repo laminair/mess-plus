@@ -11,18 +11,31 @@ import yaml
 
 from pytorch_lightning.loggers.wandb import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
+
 from utils.data_management import MESSLightningDataloader
 from utils.modelling_mess_plus_classifier import MESSRouter
+from utils.experimentation import filter_models_from_dataset
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(f'mess_plus.log'),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger(__name__)
 
 
 FILE_PATH = pathlib.Path(__file__).parent
 PROJECT_ROOT_PATH = pathlib.Path(__file__).parent.parent.resolve()
 
 DATASET_PATH = "datasets/csv/all_data.csv"
-DATASET_NAME = "boolq"
+DATASET_NAME = "logiqa2"
 MODEL_NAME = "answerdotai/ModernBERT-base"
 
-# This is a set.
+BASE_MODEL_NAME = "llama"
 MODELS_TO_REMOVE = {"llama_03B_32", "llama_70B_31"}
 
 
@@ -73,7 +86,7 @@ def train(config=None):
         )
 
         trainer.fit(lit_model, lit_dataloader)
-        logging.info(f"The best model can be found under: {checkpointing_callback.best_model_path}.")
+        logger.info(f"The best model can be found under: {checkpointing_callback.best_model_path}.")
 
     wandb.finish()
 
@@ -91,11 +104,15 @@ if __name__ == "__main__":
 
     df = pd.read_csv(f"{PROJECT_ROOT_PATH}/{DATASET_PATH}", low_memory=False)
     df = df.loc[df["dataset"] == DATASET_NAME]
-    df = df[list(set(df.columns.tolist()) - MODELS_TO_REMOVE)]
+    df = filter_models_from_dataset(
+        df,
+        base_model_name=BASE_MODEL_NAME,
+        models_to_remove=MODELS_TO_REMOVE
+    )
     inference_models = [i for i in df.columns if "llama_" in i]
     num_inference_models = len(inference_models)
 
-    logging.info(f"Training on {num_inference_models} models: {inference_models}.")
+    logger.info(f"Training on {num_inference_models} models: {inference_models}.")
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(MODEL_NAME)
     base_model = transformers.AutoModel.from_pretrained(MODEL_NAME)
@@ -106,4 +123,4 @@ if __name__ == "__main__":
     api = wandb.Api()
     sweep = api.sweep(path=f"{api.default_entity}/{args.wandb_project}/sweeps/{sweep_id}")
     best_run = sweep.best_run()
-    logging.info(f"Best run: {best_run}. Done.")
+    logger.info(f"Best run: {best_run}. Done.")
