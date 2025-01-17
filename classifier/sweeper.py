@@ -104,11 +104,11 @@ if __name__ == "__main__":
     df = pd.read_csv(f"{PROJECT_ROOT_PATH}/{pipeline_config['dataset_path']}", low_memory=False)
     df = filter_dataset(
         df,
-        benchmark_dataset=pipeline_config["dataset_path"],
+        benchmark_dataset=pipeline_config["dataset"],
         dataset_name_matching=pipeline_config["dataset_name_matching"],
         base_model_name=pipeline_config["base_model"],
         models_to_remove=set(pipeline_config["models_to_remove"]),
-        limit_nb_samples=pipeline_config["limit_nb_samples"],
+        limit_nb_samples=pipeline_config["limit_samples"],
         seed=pipeline_config["seed"]
     )
     inference_models = [i for i in df.columns if "llama_" in i]
