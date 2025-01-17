@@ -22,6 +22,9 @@ DATASET_PATH = "datasets/csv/all_data.csv"
 DATASET_NAME = "boolq"
 MODEL_NAME = "answerdotai/ModernBERT-base"
 
+# This is a set.
+MODELS_TO_REMOVE = {"llama_03B_32", "llama_70B_31"}
+
 
 def train(config=None):
 
@@ -88,8 +91,11 @@ if __name__ == "__main__":
 
     df = pd.read_csv(f"{PROJECT_ROOT_PATH}/{DATASET_PATH}", low_memory=False)
     df = df.loc[df["dataset"] == DATASET_NAME]
+    df = df[list(set(df.columns.tolist()) - MODELS_TO_REMOVE)]
     inference_models = [i for i in df.columns if "llama_" in i]
     num_inference_models = len(inference_models)
+
+    logging.info(f"Training on {num_inference_models} models: {inference_models}.")
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(MODEL_NAME)
     base_model = transformers.AutoModel.from_pretrained(MODEL_NAME)

@@ -25,4 +25,4 @@ enroot start \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/python \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/classifier/sweeper.py \
     --config config/classifier/sweep_bs_1.yaml \
-    --wandb-project mess-plus-preference-classifier-boolq-sweep-bs-1-v1
+    --wandb-project mess-plus-preference-classifier-boolq-sweep-bs-1-v2-less-models
