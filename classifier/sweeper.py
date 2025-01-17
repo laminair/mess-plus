@@ -31,8 +31,11 @@ logger = logging.getLogger(__name__)
 FILE_PATH = pathlib.Path(__file__).parent
 PROJECT_ROOT_PATH = pathlib.Path(__file__).parent.parent.resolve()
 
+SEED = 42
+
 DATASET_PATH = "datasets/csv/all_data.csv"
 DATASET_NAME = "logiqa2"
+LIMIT_NB_SAMPLES = 10_000
 MODEL_NAME = "answerdotai/ModernBERT-base"
 
 BASE_MODEL_NAME = "llama"
@@ -42,9 +45,9 @@ MODELS_TO_REMOVE = {"llama_03B_32", "llama_70B_31"}
 def train(config=None):
 
     # Set seeds
-    random.seed(42)
-    np.random.seed(42)
-    pl.seed_everything(42, workers=True)
+    random.seed(SEED)
+    np.random.seed(SEED)
+    pl.seed_everything(SEED, workers=True)
 
     with wandb.init(config=config) as run:
         config = wandb.config
@@ -107,7 +110,9 @@ if __name__ == "__main__":
     df = filter_models_from_dataset(
         df,
         base_model_name=BASE_MODEL_NAME,
-        models_to_remove=MODELS_TO_REMOVE
+        models_to_remove=MODELS_TO_REMOVE,
+        limit_nb_samples=LIMIT_NB_SAMPLES,
+        seed=SEED
     )
     inference_models = [i for i in df.columns if "llama_" in i]
     num_inference_models = len(inference_models)

@@ -12,3 +12,5 @@ legacy/figures/
 *.sqsh
 *.out
 *.csv
+*.ckpt
+*.log
