@@ -80,24 +80,34 @@ class MessPlusAutomaticModelSelector(object):
         # We need the index to start at 1.
         df.index += 1
 
+        Q = 0.0 
+        E = [1,2,3] # Dummy energy consumption for Llama 1b, 8b, 70b  
+        alpha = self.config["algorithm"]["alpha"]
+
         for idx, row in df.iterrows():
 
             print(row[text_col])
             print(row[label_col])
 
-            self.run_request(
+            chosen_response, m_acc = self.run_request(
                 req=row[text_col],
                 ground_truth=row[label_col],
                 timestamp=idx,
-                c=self.config["algorithm"]["c"]
+                c=self.config["algorithm"]["c"],
+                V=self.config["algorithm"]["V"],
+                alpha=alpha,
+                E=E, Q=Q
             )
+
+            Q = max(0.0, Q + alpha - m_acc)
 
             if idx % 10 == 0:
                 logger.info(f"Processed indices {idx - 10} to {idx}.")
 
         logger.info("Dataset processing complete.")
 
-    def run_request(self, req: str, ground_truth: str, timestamp: int, c: float):
+    def run_request(self, req: str, ground_truth: str, timestamp: 
+                    int, c: float, V: float, alpha: list, E: list, Q: float):
         x_t = self.__sample_from_bernoulli(c=c, timestamp=timestamp)
 
         if x_t == 1:
@@ -150,12 +160,41 @@ class MessPlusAutomaticModelSelector(object):
             self.__warm_up_inference_models()
 
             # We return the output of the largest (and most powerful) model.
-            return responses[-1]
+            chosen_response = responses[-1]
 
         else:
             # Let's estimate
             preferences = self.estimate_user_preferences(req=req)
-            print(preferences)
+
+            if isinstance(preferences, torch.Tensor):
+                preferences = preferences.detach().cpu().tolist()
+
+            costs = []
+            model_keys = list(self.vllm_models.keys()) 
+
+            # Compute cost for each model: stochastic optimization
+            for i, pref in enumerate(preferences):
+                m_cost = V * E[i] + Q * (alpha[i] - pref)
+                costs.append(m_cost)
+
+            min_cost_idx = int(np.argmin(costs))
+            chosen_category = model_keys[min_cost_idx]
+
+            logger.info(f"Chosen model is '{chosen_category}' with cost = {costs[min_cost_idx]:.4f}")
+            
+            # Get response from chosen model
+            embedded_req = self.__add_system_prompt_and_chat_template(req, chosen_category)
+            self.energy_monitor.begin_window("pass")
+            response_obj = self.vllm_models[chosen_category]["vllm_instance"].generate(embedded_req)
+            measurement = self.energy_monitor.end_window("pass")
+
+            chosen_response = response_obj[0].outputs[0].text.strip()
+
+            logger.info(f"Model '{chosen_category}' response: {chosen_response}")
+            logger.info(f"Energy usage (Joules): {measurement.gpu_energy}, Time (sec): {measurement.time}")
+   
+        m_acc = 1.0 if chosen_response == ground_truth else 0.0
+        return chosen_response, m_acc
 
     @staticmethod
     def __sample_from_bernoulli(c: float, timestamp: int):
