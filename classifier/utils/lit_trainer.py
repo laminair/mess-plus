@@ -33,12 +33,14 @@ class WeightedLossTrainer(pl.Trainer):
 
     @staticmethod
     def compute_class_weights(df) -> torch.Tensor:
-        unique_labels = df["label"].unique()
-        labels = df["label"].tolist()
-        num_labels = len(unique_labels)
+        label_matrix = np.stack(df["label"].values, axis=0)
+        num_samples, num_labels = label_matrix.shape
 
-        counts = np.bincount(labels, minlength=num_labels)
-        weights = 1.0 / (counts + 1e-9)
+        counts = label_matrix.sum(axis=0)  
+        freq = counts / (num_samples + 1e-9)
+
+        weights = 1.0 / (freq + 1e-9)
         weights = weights / weights.mean()
+        weights = weights.reshape(1, num_labels)
 
         return torch.as_tensor(weights, dtype=torch.float)
