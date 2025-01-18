@@ -276,10 +276,15 @@ class MessPlusAutomaticModelSelector(object):
         logger.info(f"Using a classification MLP with {param_count} trainable parameters.")
 
     def train_classifier(self, data):
-
+        labels_list = data["labels"]            
+        unique_labels = sorted(set(labels_list))
+        num_labels = len(unique_labels)
+        
         self.classifier_model = self.classifier_model.to(self.device)
-
+        self.classifier_model.config.num_labels = num_labels
         self.classifier_model.config.problem_type = "single_label_classification"
+    
+        weight_tensor = compute_class_weights(labels_list)
 
         training_args = TrainingArguments(
             output_dir="messplus_modernbert",
@@ -295,12 +300,13 @@ class MessPlusAutomaticModelSelector(object):
             report_to="wandb",
         )
 
-        trainer = Trainer(
+        trainer = WeightedLossTrainer(
             model=self.classifier_model,
             args=training_args,
             train_dataset=data,
             eval_dataset=data,
             compute_metrics=self.compute_metrics,
+            weight=weight_tensor
         )
 
         trainer.train()
@@ -351,6 +357,33 @@ class MessPlusAutomaticModelSelector(object):
         logger.info(f"Evaluated model with metrics: {metrics}")
 
         return metrics
+
+    @staticmethod
+    def compute_class_weights(labels):
+        unique_labels = set(labels)
+        num_labels = len(unique_labels)
+
+        counts = np.bincount(labels, minlength=num_labels)
+        weights = 1.0 / (counts + 1e-9)
+        weights = weights / weights.mean()
+    
+        return torch.as_tensor(weights, dtype=torch.float)
+
+
+class WeightedLossTrainer(Trainer):
+    def __init__(self, weight=None, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.weight = weight  
+
+    def compute_loss(self, model, inputs, return_outputs=False):
+        labels = inputs.get("labels")  
+        outputs = model(**inputs)
+        logits = outputs.get("logits")
+
+        loss_fct = nn.CrossEntropyLoss(weight=self.weight.to(logits.device))
+        loss = loss_fct(logits, labels)
+
+        return (loss, outputs) if return_outputs else loss
 
 
 if __name__ == "__main__":
