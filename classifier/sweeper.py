@@ -83,8 +83,7 @@ def train(config=None):
         trainer.test(lit_model, lit_dataloader)
 
         if pipeline_config["reweight_classes"] is True:
-            labels = lit_dataloader.y_train
-            trainer.update_class_weights(labels)
+            trainer.update_class_weights(df)
 
         trainer.fit(lit_model, lit_dataloader)
         logger.info(f"The best model can be found under: {checkpointing_callback.best_model_path}.")

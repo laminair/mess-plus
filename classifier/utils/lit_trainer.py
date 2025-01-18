@@ -22,17 +22,19 @@ class WeightedLossTrainer(pl.Trainer):
 
         return (loss, outputs) if return_outputs else loss
 
-    def update_class_weights(self, label_list) -> None:
+    def update_class_weights(self, df) -> None:
         """
         When doing online learning we can only update the class weights "as we go".
-        :param label_list: List of preference labels the classifier has seen up to timestep t
+        :param df: Pandas dataframe with 'label' column containing preference labels the classifier has seen up to
+                    timestep t
         :return:
         """
-        self.weight = self.compute_class_weights(label_list)
+        self.weight = self.compute_class_weights(df)
 
     @staticmethod
-    def compute_class_weights(labels) -> torch.Tensor:
-        unique_labels = set(labels)
+    def compute_class_weights(df) -> torch.Tensor:
+        unique_labels = df["label"].unique()
+        labels = df["label"].tolist()
         num_labels = len(unique_labels)
 
         counts = np.bincount(labels, minlength=num_labels)
