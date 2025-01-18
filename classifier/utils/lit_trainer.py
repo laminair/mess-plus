@@ -43,7 +43,6 @@ class WeightedLossTrainer(pl.Trainer):
         counts = label_matrix.sum(axis=0)  
         freq = counts / (num_samples + 1e-9)
 
-        weights = 1.0 / (freq + 1e-9)
         weights = weights / weights.mean()
         weights = weights.reshape(1, num_labels)
 
