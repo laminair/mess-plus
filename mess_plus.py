@@ -107,7 +107,7 @@ class MessPlusAutomaticModelSelector(object):
         logger.info("Dataset processing complete.")
 
     def run_request(self, req: str, ground_truth: str, timestamp: 
-                    int, c: float, V: float, alpha: list, E: list, Q: float):
+                    int, c: float, V: float, alpha: float, E: list, Q: float):
         x_t = self.__sample_from_bernoulli(c=c, timestamp=timestamp)
 
         if x_t == 1:
@@ -174,7 +174,7 @@ class MessPlusAutomaticModelSelector(object):
 
             # Compute cost for each model: stochastic optimization
             for i, pref in enumerate(preferences):
-                m_cost = V * E[i] + Q * (alpha[i] - pref)
+                m_cost = V * E[i] + Q * (alpha - pref)
                 costs.append(m_cost)
 
             min_cost_idx = int(np.argmin(costs))
