@@ -35,7 +35,7 @@ class WeightedLossTrainer(pl.Trainer):
     def compute_class_weights(df) -> torch.Tensor:
 
         if type(df["label"].iloc[0]) is str:
-            df["label"] = df["label"].apply(lambda x: eval(df["label"]))
+            df["label"] = df["label"].apply(lambda x: eval(x))
 
         label_matrix = np.stack(df["label"].values, axis=0)
         num_samples, num_labels = label_matrix.shape
