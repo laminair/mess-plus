@@ -15,6 +15,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from utils.data_management import MESSLightningDataloader
 from utils.modelling_mess_plus_classifier import MESSRouter
 from utils.experimentation import filter_dataset
+from utils.lit_trainer import WeightedLossTrainer
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,7 +71,8 @@ def train(config=None):
             monitor="val/loss"
         )
 
-        trainer = pl.Trainer(
+        trainer_cls = WeightedLossTrainer if pipeline_config["reweight_classes"] is True else pl.Trainer
+        trainer = trainer_cls(
             max_epochs=config.epoch,
             accelerator="gpu",
             logger=WandbLogger(),
@@ -79,6 +81,11 @@ def train(config=None):
         )
 
         trainer.test(lit_model, lit_dataloader)
+
+        if pipeline_config["reweight_classes"] is True:
+            labels = lit_dataloader.y_train
+            trainer.update_class_weights(labels)
+
         trainer.fit(lit_model, lit_dataloader)
         logger.info(f"The best model can be found under: {checkpointing_callback.best_model_path}.")
 

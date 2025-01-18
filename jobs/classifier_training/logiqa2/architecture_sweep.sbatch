@@ -26,4 +26,4 @@ enroot start \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/classifier/sweeper.py \
     --pipeline-config config/classifier/logiqa2/config.yaml \
     --sweep-config config/classifier/logiqa2/architecture_sweep.yaml \
-    --wandb-project mess-plus-preference-classifier-logiqa2-architecture-sweep-v1
+    --wandb-project mess-plus-preference-classifier-logiqa2-architecture-sweep-v2-class-reweight

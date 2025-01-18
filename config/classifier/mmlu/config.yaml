@@ -1,12 +1,13 @@
 dataset: "mmlu"
 dataset_path: "datasets/csv/all_data.csv"
 dataset_name_matching: contains
-limit_samples: 25000
+limit_samples: 10000
 inference_base_model_name: "llama"
 models_to_remove: ["llama_03B_32", "llama_70B_31"]
 
 seed: 42
 classifier_base_model: "answerdotai/ModernBERT-base"
+reweight_classes: true
 
 # Please see architecture_sweep.yaml and hyperparameter_sweep.yaml for more configuration details.
 # W&B does not allow to keep the config above in the same file.

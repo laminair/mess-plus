@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -p lrz-hgx-h100-92x4
 #SBATCH --gres=gpu:1
-#SBATCH --time=16:00:00
+#SBATCH --time=8:00:00
 #SBATCH -o output_boolq_%A.out
 #SBATCH --exclude lrz-hgx-h100-030
 
@@ -26,4 +26,4 @@ enroot start \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/classifier/sweeper.py \
     --pipeline-config config/classifier/boolq/config.yaml \
     --sweep-config config/classifier/boolq/architecture_sweep.yaml \
-    --wandb-project mess-plus-preference-classifier-boolq-architecture-sweep-v1
+    --wandb-project mess-plus-preference-classifier-boolq-architecture-sweep-v2-class-reweight
