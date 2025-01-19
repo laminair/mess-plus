@@ -2,7 +2,7 @@
 #SBATCH -p lrz-hgx-h100-92x4
 #SBATCH --gres=gpu:1
 #SBATCH --time=8:00:00
-#SBATCH -o output_boolq_%A.out
+#SBATCH -o output_mmlu_%A.out
 #SBATCH --exclude lrz-hgx-h100-030
 
 cd "$(dirname "$0")"
