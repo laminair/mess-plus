@@ -1,0 +1,17 @@
+method: grid
+metric:
+  goal: minimize
+  name: "val/loss"
+parameters:
+  epoch:
+    values: [10]
+  hidden_layer_shape:
+    values: [[512, 256]]
+  learning_rate:
+    values: [0.001, 0.0001, 0.00001]
+  minibatch_size:
+    values: [32]
+  optimizer:
+    values: ["adam"]
+  gamma:
+    values: [1, 2, 5]

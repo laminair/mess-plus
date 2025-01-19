@@ -24,6 +24,6 @@ enroot start \
     eoinference_v5 \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/python \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/classifier/sweeper.py \
-    --pipeline-config config/classifier/boolq/config.yaml \
-    --sweep-config config/classifier/boolq/focal_loss_sweep.yaml \
-    --wandb-project mess-plus-preference-classifier-boolq-focalloss-sweep-v1
+    --pipeline-config config/classifier/mmlu/config.yaml \
+    --sweep-config config/classifier/mmlu/focal_loss_sweep.yaml \
+    --wandb-project mess-plus-preference-classifier-mmlu-focalloss-sweep-v1
