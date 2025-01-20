@@ -24,12 +24,31 @@ from transformers import Trainer, TrainingArguments
 from transformers import AutoTokenizer
 from transformers import AutoModelForSequenceClassification
 
+from lm_eval.evaluator_utils import (
+	consolidate_group_results,
+	consolidate_results,
+	get_sample_size,
+	get_subtask_list,
+	get_task_list,
+	prepare_print_tasks,
+	print_writeout,
+	run_task_tests,
+)
+from lm_eval.tasks import (
+    Task,
+    TaskManager,
+    get_task_dict,
+)
+from utils.mess_lm_eval_harness.vllm import MessLMEvalVLLM
+
+
 from utils.modelling_messplus_classifier import make_mlp
-from classifier.utils.lit_trainer import WeightedLossTrainer
+from classifier.utils.lit_trainer import MESSPlusTrainer
 
 from zeus.monitor import ZeusMonitor
 
-from typing import List, Tuple
+from collections import defaultdict
+from typing import List, Tuple, Optional, Type, Callable
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,6 +67,7 @@ class MessPlusAutomaticModelSelector(object):
 
     def __init__(self, config_file_path: str):
         self.config = yaml.safe_load(open(config_file_path, "r"))
+        self.lm_eval_config = self.config["lm_eval"]
         self.dataset = None
         self.input_column_name = None
         self.expected_response_column_name = None
@@ -66,45 +86,148 @@ class MessPlusAutomaticModelSelector(object):
         # Change "True" to "False" in file venv/lib/python3.12/site-packages/zeus/device/cpu/rapl.py (l. 137)
         self.energy_monitor = ZeusMonitor(gpu_indices=[i for i in range(NUM_GPUS)])
 
-    def run_dataset(self, dataset: pd.DataFrame, text_col: str, label_col: str) -> None:
+        # LM Eval Config
+        task_manager = TaskManager(verbosity="INFO")
+
+        self.task_dict = get_task_dict(self.lm_eval_config["benchmarks"], task_manager)
+        self.task_dict = self.__adjust_config(
+            self.task_dict,
+            gen_kwargs=self.lm_eval_config["gen_kwargs"] if "gen_kwargs" in self.config.keys() else None,
+            predict_only=False,
+            num_fewshot=0,
+            fewshot_random_seed=self.config["seed"]
+        )
+
+        self.eval_tasks = get_task_list(self.task_dict)
+
+    def run_benchmark(
+        self,
+        dataset: pd.DataFrame,
+        text_col: str,
+        label_col: str,
+        limit_num_samples: int = None,
+        cache_requests: bool = False,
+        rewrite_requests_cache: bool = False,
+        system_instruction: Optional[str] = None,
+        apply_chat_template: bool = False,
+        fewshot_as_multiturn: bool = False,
+        chat_template: Optional[Callable] = None,
+        tokenizer_name: str = "",
+        write_out: bool = False,
+        log_samples: bool = False
+    ) -> None:
         """
         This function expects a pandas dataframe where there is a text input and a corresponding label.
         :param dataset: pandas DataFrame containing the dataset.
         :param text_col: Name of the text column
         :param label_col: Name of the label column
+        :param limit_num_samples: Number of samples to use for MESS+
+        :param
         :return: None
         """
 
-        df = dataset[[text_col, label_col]]
-        df.reset_index(inplace=True)
-        # We need the index to start at 1.
-        df.index += 1
-
-        Q = 0.0 
-        E = [1,2,3] # Dummy energy consumption for Llama 1b, 8b, 70b  
-        alpha = self.config["algorithm"]["alpha"]
-
-        for idx, row in df.iterrows():
-
-            print(row[text_col])
-            print(row[label_col])
-
-            chosen_response, m_acc = self.run_request(
-                req=row[text_col],
-                ground_truth=row[label_col],
-                timestamp=idx,
-                c=self.config["algorithm"]["c"],
-                V=self.config["algorithm"]["V"],
-                alpha=alpha,
-                E=E, Q=Q
+        if apply_chat_template:
+            logger.warning(
+                "Chat template formatting change affects loglikelihood and multiple-choice tasks. See docs/chat-template-readme.md for details."
             )
 
-            Q = max(0.0, Q + alpha - m_acc)
+        # tracks all Instances/requests a model must generate output on.
+        requests = defaultdict(list)
+        # stores the amount to pad out reqs per req. type so that
+        # number of fwd passes per distributed rank is equal
+        padding_requests = defaultdict(int)
 
-            if idx % 10 == 0:
-                logger.info(f"Processed indices {idx - 10} to {idx}.")
+        # get lists of group hierarchy and each type of request
+        eval_tasks = get_task_list(self.task_dict)
+        if not log_samples:
+            if not all(
+                    "bypass" not in getattr(task_output.task, "_metric_fn_list", {}).keys()
+                    for task_output in eval_tasks
+            ):
+                raise ValueError("log_samples must be True for 'bypass' metric-only tasks")
 
-        logger.info("Dataset processing complete.")
+        limit_arg = limit_num_samples
+        limits = []
+        for task_output in self.eval_tasks:
+            task: Task = task_output.task
+
+            smallest_model_category, smallest_model_instance = next(iter(self.vllm_models.items()))
+            smallest_model_instance = smallest_model_instance["vllm_eval_instance"]
+
+            limit = get_sample_size(task, limit_arg)
+            limits.append(limit)
+            task.build_all_requests(
+                limit=limit,
+                rank=0,
+                world_size=1,
+                cache_requests=cache_requests,
+                rewrite_requests_cache=rewrite_requests_cache,
+                system_instruction=system_instruction,
+                apply_chat_template=bool(apply_chat_template),
+                fewshot_as_multiturn=fewshot_as_multiturn,
+                chat_template=getattr(smallest_model_instance, "apply_chat_template") if apply_chat_template else None,
+                tokenizer_name=getattr(smallest_model_instance, "tokenizer_name", "") if apply_chat_template else "",
+            )
+            logger.debug(
+                f"Task: {task_output.task_name}; number of requests on this rank: {len(task.instances)}"
+            )
+            if write_out:
+                print_writeout(task)
+            # aggregate Instances by LM method requested to get output.
+            for instance in task.instances:
+                reqtype = instance.request_type
+                requests[reqtype].append(instance)
+
+        ### Run LM on inputs, get all outputs ###
+        # execute each type of request
+        for reqtype, reqs in requests.items():
+            logger.info(f"Running {reqtype} requests")
+            # create `K` copies of each request `req` based off `K = req.repeats`
+            cloned_reqs = []
+            for req in reqs:
+                cloned_reqs.extend([req] * req.repeats)
+
+            model_resps_mapping = {i: [] for i in self.vllm_models.keys()}
+            for model_category, model in self.vllm_models.items():
+                model_resps_mapping[model_category] = getattr(model["vllm_instance"], reqtype)(cloned_reqs)
+
+            # for model_category, resps in model_resps_mapping.items():
+            #     # put responses from model into a list of length K for each request.
+            #     for x, req in zip(resps, cloned_reqs):
+            #         req.resps.append(x)
+
+            print(model_resps_mapping)
+
+        # df = dataset[[text_col, label_col]]
+        # df.reset_index(inplace=True)
+        # # We need the index to start at 1.
+        # df.index += 1
+        #
+        # Q = 0.0
+        # E = [1, 8, 70]  # Dummy energy consumption for Llama 1b, 8b, 70b
+        # alpha = self.config["algorithm"]["alpha"]
+        #
+        # for idx, row in df.iterrows():
+        #
+        #     print(row[text_col])
+        #     print(row[label_col])
+        #
+        #     chosen_response, m_acc = self.run_request(
+        #         req=row[text_col],
+        #         ground_truth=row[label_col],
+        #         timestamp=idx,
+        #         c=self.config["algorithm"]["c"],
+        #         V=self.config["algorithm"]["V"],
+        #         alpha=alpha,
+        #         E=E, Q=Q
+        #     )
+        #
+        #     Q = max(0.0, Q + alpha - m_acc)
+        #
+        #     if idx % 10 == 0:
+        #         logger.info(f"Processed indices {idx - 10} to {idx}.")
+        #
+        # logger.info("Dataset processing complete.")
 
     def run_request(self, req: str, ground_truth: str, timestamp: 
                     int, c: float, V: float, alpha: float, E: list, Q: float):
@@ -222,12 +345,13 @@ class MessPlusAutomaticModelSelector(object):
             os.environ["CUDA_VISIBLE_DEVICES"] = str(data["gpu_indices"]).replace("[", "").replace("]", "")
             self.vllm_models[data["category"]] = {
                 "model_name": model,
-                "vllm_instance": LLM(
+                "vllm_eval_instance": MessLMEvalVLLM(
                     model,
-                    max_model_len=data["max_seq_len"],
+                    max_seq_len=data["max_seq_len"],
+                    gpu_indices=data["gpu_indices"],
                     trust_remote_code=True,
                     tensor_parallel_size=len(data["gpu_indices"]),
-                    gpu_memory_utilization=max_memory_utilization_per_model
+                    max_memory_utilization=max_memory_utilization_per_model
                 ),
                 "tokenizer": AutoTokenizer.from_pretrained(model)
             }
@@ -314,6 +438,80 @@ class MessPlusAutomaticModelSelector(object):
         param_count = sum([np.prod(p.size()) for p in trainable_parameters])
 
         logger.info(f"Using a classification MLP with {param_count} trainable parameters.")
+
+    def __adjust_config(self, task_dict, gen_kwargs, predict_only, num_fewshot, fewshot_random_seed):
+        adjusted_task_dict = {}
+        for task_name, task_obj in task_dict.items():
+            if isinstance(task_obj, dict):
+                adjusted_task_dict = {
+                    **adjusted_task_dict,
+                    **{task_name: self.__adjust_config(task_obj)},
+                }
+
+            else:
+                if task_obj.get_config("output_type") == "generate_until":
+                    if gen_kwargs is not None:
+                        task_obj.set_config(
+                            key="generation_kwargs", value=gen_kwargs, update=True
+                        )
+
+                if predict_only:
+                    logger.info(
+                        f"Processing {task_name} in output-only mode. Metrics will not be calculated!"
+                    )
+                    # we have to change the class properties post-hoc. This is pretty hacky.
+                    task_obj.override_metric(metric_name="bypass")
+
+                # override tasks' fewshot values to the provided num_fewshot arg value
+                # except if tasks have it set to 0 manually in their configs--then we should never overwrite that
+                if num_fewshot is not None:
+                    if (default_num_fewshot := task_obj.get_config("num_fewshot")) == 0:
+                        logger.info(
+                            f"num_fewshot has been set to 0 for {task_name} in its config. Manual configuration will be ignored."
+                        )
+                    else:
+                        logger.warning(
+                            f"Overwriting default num_fewshot of {task_name} from {default_num_fewshot} to {num_fewshot}"
+                        )
+                        task_obj.set_config(key="num_fewshot", value=num_fewshot)
+                else:
+                    # if num_fewshot not provided, and the task does not define a default one, default to 0
+                    if (
+                            default_num_fewshot := task_obj.get_config("num_fewshot")
+                    ) is None:
+                        task_obj.set_config(key="num_fewshot", value=0)
+                # fewshot_random_seed set for tasks, even with a default num_fewshot (e.g. in the YAML file)
+                task_obj.set_fewshot_seed(seed=fewshot_random_seed)
+
+                adjusted_task_dict[task_name] = task_obj
+
+        return adjusted_task_dict
+
+    def validate_tasks(self, lm, eval_tasks, confirm_run_unsafe_code: bool = True):
+        # validation checks:
+        # 1.are we running multimodal task <-> non-multimodal model class, or vice-versa.
+        # 2.are we running code that is marked as unsafe.
+        incompatible_tasks = []
+        for task_output in eval_tasks:
+            task: Task = task_output.task
+
+            if getattr(lm, "MULTIMODAL", False) != getattr(task, "MULTIMODAL", False):
+                incompatible_tasks.append(task_output.task_name)
+            elif getattr(task, "UNSAFE_CODE", False) and not confirm_run_unsafe_code:
+                raise ValueError(
+                    f"Attempted to run task: {task_output.task_name} which is marked as unsafe. Set confirm_run_unsafe_code=True to run this task."
+                )
+        if len(incompatible_tasks) > 0:
+            if not getattr(lm, "MULTIMODAL", False):
+                raise ValueError(
+                    f"Attempted to run tasks: {incompatible_tasks} which require multimodal input, but the selected model type does not currently implement this. Multimodal support is currently restricted to the ['hf-multimodal', 'vllm-vlm'] model type."
+                )
+            else:
+                raise ValueError(
+                    f"Attempted to run tasks: {incompatible_tasks} which are text-only, but used a model type which only currently supports multimodal tasks."
+                )
+
+    # end validation check
 
     def train_classifier(self, data):
         self.classifier_model = self.classifier_model.to(self.device)
