@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pytorch_lightning as pl
 import torch
@@ -19,6 +21,9 @@ class MESSPlusTrainer(pl.Trainer):
         outputs = model(**inputs)
         logits = outputs.get("logits")
 
+        print("Labels inside loss fn: ", labels)
+        print("Logits inside loss fn: ", logits)
+
         self.weight = self.weight.to(logits.device)
         loss = self.criterion(logits, labels.float())
 
@@ -33,6 +38,7 @@ class MESSPlusTrainer(pl.Trainer):
         if kind == "bce" and gamma == 0.0:
             self.criterion = torch.nn.BCELoss(weight=self.weight)
         elif gamma > 0:
+            logging.info(f"Using focal loss to train classifier.")
             assert gamma >= 0, "Make sure gamma is configured for focal loss."
             self.criterion_name = "focal_bce"
             self.criterion = FocalLoss(
@@ -57,8 +63,13 @@ class MESSPlusTrainer(pl.Trainer):
     @staticmethod
     def compute_class_weights(df) -> torch.Tensor:
 
-        if type(df["label"].iloc[0]) is str:
-            df["label"] = df["label"].apply(lambda x: eval(x))
+        def coerce_dtype(x):
+            if type(x) is str:
+                return eval(x)
+
+            return x
+
+        df["label"] = df["label"].apply(lambda x: coerce_dtype(x))
 
         label_matrix = np.stack(df["label"].values, axis=0)
         num_samples, num_labels = label_matrix.shape

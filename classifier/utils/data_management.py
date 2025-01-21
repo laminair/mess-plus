@@ -1,3 +1,5 @@
+import os
+
 import pandas as pd
 import psutil
 import pytorch_lightning as pl
@@ -5,11 +7,11 @@ import re
 import torch
 
 from bs4 import BeautifulSoup
+from pytorch_lightning.utilities.types import EVAL_DATALOADERS
 from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
 
-
-NUM_WORKERS = 20 if psutil.cpu_count(False) > 21 else (psutil.cpu_count(False) - 2)
+NUM_WORKERS = 1  # 20 if psutil.cpu_count(False) > 21 else (psutil.cpu_count(False) - 2)
 
 
 def pre_process(text):
@@ -62,6 +64,20 @@ def load_data(df, seed, test_val_dataset_size: float = 0.15):
     return x_train, x_val, x_test, y_train, y_val, y_test
 
 
+def tokenize_request(request, tokenizer):
+    return tokenizer.encode_plus(
+        request,
+        None,
+        add_special_tokens=True,
+        max_length=512,
+        padding="max_length",
+        return_token_type_ids=False,
+        return_attention_mask=True,
+        truncation=True,
+        return_tensors="pt"
+    )
+
+
 class ClassificationDataset(Dataset):
 
     def __init__(self, x: list, y: list, tokenizer):
@@ -73,17 +89,7 @@ class ClassificationDataset(Dataset):
         return len(self.x)
 
     def __getitem__(self, idx):
-        inputs = self.tokenizer.encode_plus(
-            self.x[idx],
-            None,
-            add_special_tokens=True,
-            max_length=512,
-            padding="max_length",
-            return_token_type_ids=False,
-            return_attention_mask=True,
-            truncation=True,
-            return_tensors="pt"
-        )
+        inputs = tokenize_request(request=self.x[idx], tokenizer=self.tokenizer)
 
         return {
             "input_ids": inputs["input_ids"].flatten(),
@@ -94,12 +100,14 @@ class ClassificationDataset(Dataset):
 
 class MESSLightningDataloader(pl.LightningDataModule):
 
-    def __init__(self, df: pd.DataFrame, tokenizer, batch_size: int = 64, seed: int = 42):
+    def __init__(self, df: pd.DataFrame = None, tokenizer=None, batch_size: int = 64, seed: int = 42, load_df: bool = True):
         super().__init__()
-        self.x_train, self.x_val, self.x_test, self.y_train, self.y_val, self.y_test = load_data(
-            df=df,
-            seed=seed
-        )
+
+        if load_df is True:
+            self.x_train, self.x_val, self.x_test, self.y_train, self.y_val, self.y_test = load_data(
+                df=df,
+                seed=seed
+            )
 
         self.tokenizer = tokenizer
         self.batch_size = batch_size
@@ -131,4 +139,25 @@ class MESSLightningDataloader(pl.LightningDataModule):
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=NUM_WORKERS
+        )
+
+
+class MESSOnlineLightningDataloader(MESSLightningDataloader):
+
+    def __init__(self, request, label, tokenizer, seed: int = 42):
+        super().__init__(tokenizer=tokenizer, batch_size=1, seed=seed, load_df=False)
+        self.x_train = [request] if type(request) is not list else request
+        self.y_train = [label]
+
+    def setup(self, stage: str):
+        self.trainset = ClassificationDataset(x=self.x_train, y=self.y_train, tokenizer=self.tokenizer)
+        self.valset = ClassificationDataset(x=self.x_train, y=self.y_train, tokenizer=self.tokenizer)
+        self.testset = ClassificationDataset(x=self.x_train, y=self.y_train, tokenizer=self.tokenizer)
+
+    def train_dataloader(self):
+        return DataLoader(
+            self.trainset,
+            batch_size=self.batch_size,
+            shuffle=True,
+            num_workers=NUM_WORKERS,
         )

@@ -42,7 +42,16 @@ class MESSPlusMLP(nn.Module):
 
 class MESSRouter(pl.LightningModule):
 
-    def __init__(self, base_model, model_list: list, hidden_layer_shape: list, optim_name: str, n_classes=10, n_epochs=3, lr=0.0001):
+    def __init__(
+        self,
+        base_model,
+        model_list: list,
+        hidden_layer_shape: list,
+        optim_name: str,
+        n_classes: int = 3,
+        n_epochs: int = 3,
+        lr: float = 0.0001
+    ):
         super().__init__()
 
         self.backbone = base_model
@@ -79,6 +88,7 @@ class MESSRouter(pl.LightningModule):
         out = self.mean_pooling(out.last_hidden_state, attn_mask)
         out = self.classifier(out)
         out = torch.sigmoid(out)
+
         return out
 
     @staticmethod
@@ -94,6 +104,9 @@ class MESSRouter(pl.LightningModule):
         labels = batch['label']
 
         probs = self(input_ids, attention_mask)
+        print("\nOUT: ", probs)
+        print("\nLAB: ", labels)
+
         loss = self.criterion(probs, labels)
         self.log('train/loss', loss, prog_bar=True, logger=True)
         return {"loss": loss, "predictions": probs, "labels": labels}

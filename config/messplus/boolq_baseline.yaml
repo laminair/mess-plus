@@ -6,10 +6,12 @@ model_zoo:
     category: "small"
     gpu_indices: [0]
     max_seq_len: 2048
-  meta-llama/Llama-3.1-8B-Instruct:
+    gpu_memory_utilization: 0.45
+  meta-llama/Llama-3.2-3B-Instruct:
     category: "medium"
     gpu_indices: [0]
     max_seq_len: 2048
+    gpu_memory_utilization: 0.45
 #  meta-llama/Llama-3.3-70B-Instruct:
 #    category: "large"
 #    gpu_indices: [0]
@@ -18,17 +20,21 @@ model_zoo:
 classifier_model:
   model_id: "answerdotai/ModernBERT-base"
   max_seq_len: 1024
-  classifier_layer_hidden_dims: [512]
+  hidden_layer_shape: [512]
   optimizer: "adam"
   beta1: 0.9
   beta2: 0.99
   lr: 0.0001
   minibatch_size: 1
+  reweight_classes: true
+  gamma: 2
   gpu_indices: [0]
 
 algorithm:
   alpha: 0.8
   c: 1
+  V: 1
 
 lm_eval:
   benchmarks: ["boolq"]
+  limit_num_samples: null
