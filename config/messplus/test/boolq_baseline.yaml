@@ -26,9 +26,10 @@ classifier_model:
   beta2: 0.99
   lr: 0.0001
   minibatch_size: 1
+  epochs: 1
   reweight_classes: true
   gamma: 2
-  gpu_indices: [0]
+  gpu_index: 0
 
 algorithm:
   alpha: 0.8

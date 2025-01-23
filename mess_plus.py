@@ -1,3 +1,4 @@
+import argparse
 import contextlib
 import gc
 import logging
@@ -8,18 +9,19 @@ import transformers
 import torch
 import numpy as np
 import pytorch_lightning as pl
+import wandb
 import yaml
 
 from numpy.random import binomial
+from torch.utils.data import DataLoader
 from vllm.distributed.parallel_state import destroy_model_parallel, destroy_distributed_environment
-from sklearn.metrics import accuracy_score, f1_score
 
 from lm_eval.evaluator_utils import get_sample_size, get_task_list,	print_writeout
 from lm_eval.tasks import Task, TaskManager, get_task_dict
 from lm_eval.api.task import Instance
 
 from utils.mess_lm_eval_harness.vllm_v2 import MessLMEvalVLLM
-from classifier.utils import MESSRouter, MESSOnlineLightningDataloader, MESSPlusTrainer, tokenize_request
+from classifier.utils import MESSRouterNoLightning, MESSOnlineLightningDataloader, tokenize_request, ClassificationDataset
 
 from zeus.monitor import ZeusMonitor
 
@@ -38,16 +40,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 NUM_GPUS = torch.cuda.device_count()
 
-os.environ[" TOKENIZERS_PARALLELISM"] = "true"
+os.environ["TOKENIZERS_PARALLELISM"] = "true"
 torch.set_float32_matmul_precision('high')
 
 
 class MessPlusAutomaticModelSelector(object):
 
-    def __init__(self, config_file_path: str):
+    def __init__(self, config_file_path: str, project_name):
         self.config = yaml.safe_load(open(config_file_path, "r"))
         self.lm_eval_config = self.config["lm_eval"]
         self.algorithm_config = self.config["algorithm"]
+        self.wandb_project_name = project_name
+
         self.dataset = None
         self.input_column_name = None
         self.expected_response_column_name = None
@@ -56,16 +60,22 @@ class MessPlusAutomaticModelSelector(object):
 
         # Classifier model
         self.classifier_config = self.config["classifier_model"]
-        self.__warmup_classifier_model()
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.label_history = pd.DataFrame()
+        self.class_weights = torch.ones((1, 3))
 
         # Loggers
         # When using Zeus, you must disable RAPL CPU monitoring as this will cause the program to fail.
         # Change "True" to "False" in file venv/lib/python3.12/site-packages/zeus/device/cpu/rapl.py (l. 137)
+        self.wandb_run = None
         self.measurements = {d["category"]: [] for i, d in self.config["model_zoo"].items()}
         self.scores = {d["category"]: [] for i, d in self.config["model_zoo"].items()}
         self.energy_monitor = ZeusMonitor(gpu_indices=[i for i in range(NUM_GPUS)], approx_instant_energy=True)
+        self.classifier_running_train_loss = 0.0
+        self.classifier_train_steps = 0
+        self.classifier_running_val_loss = 0.0
+        self.classifier_val_steps = 0
+        self.algorithm_correct_choices = 0
 
         # Algorithm config
         # Q is a virtual queue, i.e., we only keep the sum of all violations, no history.
@@ -161,9 +171,21 @@ class MessPlusAutomaticModelSelector(object):
             cloned_reqs = []
             for req in reqs:
                 cloned_reqs.extend([req] * req.repeats)
-    
-            for idx, request in enumerate(cloned_reqs): 
-                model_resps_mapping = self.run_request(request, timestamp=idx)
+
+            with wandb.init(
+                project=self.wandb_project_name,
+                name=f"{self.config['lm_eval']['benchmarks'][0]}",
+                config=self.config
+            ) as run:
+                self.wandb_run = run
+                self.wandb_run.summary["V"] = self.algorithm_config["V"]
+                self.wandb_run.summary["alpha"] = self.algorithm_config["alpha"]
+                self.wandb_run.summary["c"] = self.algorithm_config["c"]
+
+                # We initialize one classifier model for every benchmark
+                self.__warmup_classifier_model()
+                for idx, request in enumerate(cloned_reqs):
+                    self.run_request(request, timestamp=idx)
 
     def query_model(self, model, request, model_category):
         self.energy_monitor.begin_window(f"pass_{model_category}")
@@ -175,80 +197,120 @@ class MessPlusAutomaticModelSelector(object):
         )
 
         measurement = self.energy_monitor.end_window(f"pass_{model_category}")
-
         self.measurements[model_category].append(measurement)
         self.scores[model_category].append(output)
 
         return output
 
-    def run_request(self, request: Instance, c: int = 3, timestamp: int = 0):
-        x_t = self.__sample_from_bernoulli(c=c, timestamp=timestamp)
+    def run_request(self, request: Instance, timestamp: int = 0):
+        x_t = self.__sample_from_bernoulli(c=self.algorithm_config["c"], timestamp=timestamp)
     
         if x_t == 1: 
             logger.info(f"Exploring during step {timestamp}.")
             
-            model_resps_mapping = {i: [] for i in self.vllm_models.keys()}
-            for model_category, model in self.vllm_models.items():
-                model_resps_mapping[model_category] = self.query_model(
-                    model, 
-                    request, 
-                    model_category
-                )
-    
-            # the final response
-            label = []
-            for model_category, data in model_resps_mapping.items(): 
-                label.append(0 if sum(map(lambda x: x[1], data)) / len(data) < 0.5 else 1)
+            label = self.__get_inference_model_labels(request=request)
 
             label = torch.tensor(label)
-            response_idx = label[torch.argmax(label)]
-            model_category = [i for i in self.vllm_models.keys()][response_idx]
-            response = label[response_idx]
+            model_category = [i for i in self.vllm_models.keys()][-1]
+            final_response = label[-1]
         
             # Prepare the classifier training environment
             # self.__evict_vllm_models()
 
             # Train the classifier
-            classifier_power_measurement = self.__train_classifier_one_step(request=request, label=label.tolist())
+            cp_measurement = self.__train_classifier_one_step(request=request, label=label.tolist(), timestep=timestamp)
+            gpu_keys = [i for i in cp_measurement.gpu_energy.keys()]
 
             # Need to re-initiate inference models
             # self.__warm_up_inference_models()
+
+            # The last GPU is always used to train an run inference for the classifier model.
+            logs = {"energy/train_classifier": cp_measurement.gpu_energy[gpu_keys[-1]]}
+            logs.update({
+                f"preds/infer_{cat}": label[idx] for idx, cat in enumerate(self.vllm_models.keys())
+            })
+
+            for idx, cat in enumerate(self.vllm_models.keys()):
+                logs.update({f"energy/infer_{cat}": sum([v for v in self.measurements[cat][-1].gpu_energy.values()])})
+
+            logs.update({f"time/infer_{cat}": self.measurements[cat][-1].time for idx, cat in enumerate(self.vllm_models.keys())})
+            logs.update({
+                f"algorithm/infer_response_{model_category}": final_response
+            })
+
+            self.wandb_run.log(logs, step=timestamp)
     
         else: 
-            logger.info(f"Estimating during step {timestamp}.")  
+            logger.info(f"Estimating during step {timestamp}.")
+            logs = {}
 
-            preference_estimation = self.estimate_user_preferences(request=request)
-            preference_estimation = torch.tensor(preference_estimation).reshape(-1, 1)
+            preference_estimation, inference_model_label = self.estimate_user_preferences(
+                request=request,
+                timestamp=timestamp
+            )
 
-            energy = []
-            for model_category in selector.measurements.keys(): 
-                energy.append(
-                    sum(map(lambda x: sum([i for i in x.gpu_energy.values()]) / len(selector.measurements[model_category]), selector.measurements[model_category]))
+            logs.update({
+                f"algorithm/satisfaction_likelihood_{cat}": preference_estimation[idx] for idx, cat in enumerate(
+                    self.vllm_models.keys()
                 )
-            
-            energy = torch.tensor(energy).view(-1, 1)
+            })
+
+            preference_estimation = preference_estimation.reshape(-1, 1)
+            energy = []
+            for model_category in self.measurements.keys():
+                energy.append(
+                    sum(map(lambda x: sum([i for i in x.gpu_energy.values()]) / len(self.measurements[model_category]), self.measurements[model_category]))
+                )
+
+            logs.update({f"algorithm/energy_estimate_{cat}": energy[idx] for idx, cat in enumerate(self.vllm_models.keys())})
+            energy = torch.tensor(energy).reshape(-1, 1)
+
             # Energy and Preference Estimation are vectors.
             cost_fn = self.algorithm_config["V"] * energy + self.Q * (self.algorithm_config["alpha"] - preference_estimation)
+            logs.update({f"algorithm/cost_fn_{cat}": cost_fn[idx].item() for idx, cat in enumerate(self.vllm_models.keys())})
+
             choice_idx = torch.argmax(cost_fn)
+            choice_is_correct = 1 if torch.tensor(inference_model_label).reshape(-1, 1)[choice_idx].item() == 1 else 0
+            self.algorithm_correct_choices += choice_is_correct
+            logs.update({
+                f"algorithm/chosen_model": choice_idx,
+                f"algorithm/choice_correct": choice_is_correct,
+                f"algorithm/choice_accuracy": float(self.algorithm_correct_choices / timestamp),
+                f"algorithm/q_size": self.Q
+            })
             model_category = [i for i in self.vllm_models.keys()][choice_idx]
 
             # Query the model of choice
-            response = self.query_model(
+            # This is what the output looks like: [(-1.7801642417907715, False)] (neg log-likelihood, Response)
+            final_response = self.query_model(
                 self.vllm_models[model_category],
                 request, 
                 model_category
             )
 
-        return response, model_category
+            final_response = int(final_response[0][1])
+            logs.update({f"algorithm/infer_response_{model_category}": final_response})
+            logs.update({f"algorithm/infer_energy_{model_category}": sum([v for v in self.measurements[model_category][-1].gpu_energy.values()])})
 
-    @staticmethod
-    def __sample_from_bernoulli(c: float, timestamp: int):
+            self.wandb_run.log(logs, step=timestamp)
+
+        # Queue update based on satisfaction rate.
+        self.Q = max(0.0, self.Q + self.algorithm_config["alpha"] - final_response)
+
+        return final_response, model_category
+
+    def __sample_from_bernoulli(self, c: float, timestamp: int):
 
         p_t = min(
             1.0, c / np.power(1 if timestamp == 0 else timestamp, (1/5))
         )
 
         x_t = binomial(n=1, p=p_t, size=1)
+
+        self.wandb_run.log({
+            "p_t": p_t,
+            "x_t": x_t
+        }, step=timestamp)
 
         return x_t.item()
 
@@ -285,29 +347,44 @@ class MessPlusAutomaticModelSelector(object):
         self.classifier_tokenizer = transformers.AutoTokenizer.from_pretrained(self.classifier_config["model_id"])
         base_model = transformers.AutoModel.from_pretrained(self.classifier_config["model_id"])
 
-        trainer_cls = MESSPlusTrainer if self.classifier_config["reweight_classes"] is True else pl.Trainer
-        self.classifier_trainer = trainer_cls(
-            max_epochs=1,
-            accelerator="gpu",
-            # logger=WandbLogger(),
-            log_every_n_steps=1,
-            # callbacks=[checkpointing_callback]
-        )
+        # trainer_cls = MESSPlusTrainer if self.classifier_config["reweight_classes"] is True else pl.Trainer
+        # logger_callback = LoggerCallback(wandb_run=self.wandb_run)
+        # self.classifier_trainer = trainer_cls(
+        #     max_epochs=1,
+        #     accelerator="gpu",
+        #     # logger=WandbLogger(),
+        #     log_every_n_steps=1,
+        #     callbacks=[logger_callback]
+        # )
 
-        self.mess_classifier = MESSRouter(
+        self.classifier_device = f"cuda:{self.classifier_config['gpu_index']}" if torch.cuda.is_available() else "cpu"
+
+        self.mess_classifier = MESSRouterNoLightning(
             base_model=base_model,
             model_list=[i for i in self.config["model_zoo"].keys()],
             n_classes=len([i for i in self.config["model_zoo"].keys()]),
             n_epochs=1,
-            lr=self.classifier_config["lr"],
             hidden_layer_shape=self.classifier_config["hidden_layer_shape"],
-            optim_name=self.classifier_config["optimizer"]
         )
 
-        self.classifier_trainer.configure_criterion(
+        self.mess_classifier = self.mess_classifier.to(self.classifier_device)
+
+        self.classifier_criterion = self.mess_classifier.configure_criterion(
+            weight=self.class_weights,
             kind="bce",
             gamma=self.classifier_config["gamma"] if "gamma" in self.classifier_config.keys() else None
         )
+
+        self.classifier_optim = self.mess_classifier.get_optimizer(
+            optim_name=self.classifier_config["optimizer"],
+            model=self.mess_classifier,
+            lr=self.classifier_config["lr"],
+        )
+
+        # self.classifier_trainer.configure_criterion(
+        #     kind="bce",
+        #     gamma=self.classifier_config["gamma"] if "gamma" in self.classifier_config.keys() else None
+        # )
 
         logger.info(f"Classification model {self.config['classifier_model']['model_id']} loaded and ready to use.")
 
@@ -328,25 +405,76 @@ class MessPlusAutomaticModelSelector(object):
             torch.distributed.destroy_process_group()
         torch.cuda.synchronize()
 
-    def __train_classifier_one_step(self, request: Instance, label: List[int]):
-        lit_dataloader = MESSOnlineLightningDataloader(
-            request=request.doc["passage"] if "passage" in request.doc else request.doc["text"],
-            label=label,
-            tokenizer=self.classifier_tokenizer,
-            seed=self.config["seed"],
+    def __train_classifier_one_step(self, request: Instance, label: List[int], timestep: int):
 
-        )
-
+        self.class_weights = self.class_weights.cpu()
         if self.classifier_config["reweight_classes"] is True or self.classifier_config["use_focal_loss"] is True:
             # When training with class-weighted losses, we add the new label to the label history and compute
             # the class weights online. The same goes for Focal Loss.
             self.label_history = pd.concat([self.label_history, pd.DataFrame({"label": str(label)}, index=[0])])
-            # self.label_history.reset_index(inplace=True)
-            self.classifier_trainer.compute_class_weights(self.label_history)
+            self.class_weights = self.mess_classifier.compute_class_weights(self.label_history)
+
+        self.classifier_criterion = torch.nn.BCELoss()
+
+        # self.mess_classifier.configure_criterion(
+        #     weight=self.class_weights.to(self.classifier_device),
+        #     kind="bce",
+        #     gamma=self.classifier_config["gamma"] if "gamma" in self.classifier_config.keys() else None
+        # ))
+
+        dataset = ClassificationDataset(
+            x=[
+                request.doc["passage"] if "passage" in request.doc else request.doc["text"]
+            ],
+            y=[label],
+            tokenizer=self.classifier_tokenizer
+        )
+
+        loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=1)
 
         self.energy_monitor.begin_window(f"classifier_training_step")
-        self.classifier_trainer.fit(self.mess_classifier, datamodule=lit_dataloader)
+        stepper = 0
+        step_loss = 0.0
+        for epoch in range(self.classifier_config["epochs"]):
+
+            for i, batch in enumerate(loader):
+                input_ids = batch['input_ids'].to(self.classifier_device)
+                attention_mask = batch['attention_mask'].to(self.classifier_device)
+                labels = batch['label'].to(self.classifier_device)
+
+                self.classifier_optim.zero_grad()
+                outputs = self.mess_classifier(input_ids, attention_mask)
+
+                loss = self.classifier_criterion(outputs, labels.float())
+                loss.backward()
+                self.classifier_optim.step()
+
+                step_loss += loss.item()
+                stepper += 1
+                self.classifier_running_train_loss += loss.item()
+                self.classifier_train_steps += 1
+
         measurement = self.energy_monitor.end_window(f"classifier_training_step")
+
+        self.wandb_run.log({
+            "classifier/train_step_loss": float(step_loss / stepper),
+            "classifier/train_running_loss": float(self.classifier_running_train_loss / self.classifier_train_steps),
+            "classifier/train_step_energy": sum([v for v in measurement.gpu_energy.values()])
+        }, step=timestep)
+
+
+
+
+        # if self.classifier_config["reweight_classes"] is True or self.classifier_config["use_focal_loss"] is True:
+        #     # When training with class-weighted losses, we add the new label to the label history and compute
+        #     # the class weights online. The same goes for Focal Loss.
+        #     self.label_history = pd.concat([self.label_history, pd.DataFrame({"label": str(label)}, index=[0])])
+        #     # self.label_history.reset_index(inplace=True)
+        #     self.classifier_trainer.compute_class_weights(self.label_history)
+        #
+        # self.energy_monitor.begin_window(f"classifier_training_step")
+        # self.classifier_trainer.fit(self.mess_classifier, datamodule=lit_dataloader)
+        # measurement = self.energy_monitor.end_window(f"classifier_training_step")
 
         return measurement
 
@@ -398,6 +526,22 @@ class MessPlusAutomaticModelSelector(object):
 
         return adjusted_task_dict
 
+    def __get_inference_model_labels(self, request):
+        model_resps_mapping = {i: [] for i in self.vllm_models.keys()}
+        for model_category, model in self.vllm_models.items():
+            model_resps_mapping[model_category] = self.query_model(
+                model,
+                request,
+                model_category
+            )
+
+        # the final response
+        label = []
+        for model_category, data in model_resps_mapping.items():
+            label.append(0 if sum(map(lambda x: x[1], data)) / len(data) < 0.5 else 1)
+
+        return label
+
     @staticmethod
     def validate_tasks(lm, eval_tasks, confirm_run_unsafe_code: bool = True):
         # validation checks:
@@ -423,17 +567,59 @@ class MessPlusAutomaticModelSelector(object):
                     f"Attempted to run tasks: {incompatible_tasks} which are text-only, but used a model type which only currently supports multimodal tasks."
                 )
 
-    def estimate_user_preferences(self, request: Instance):
+    def estimate_user_preferences(self, request: Instance, timestamp: int):
+        # We need the true labels to estimate the predictor quality.
+        label = self.__get_inference_model_labels(request=request)
 
-        inputs = tokenize_request(request=request.doc["text"], tokenizer=self.classifier_tokenizer)
-        inputs = {k: v.to(self.mess_classifier.device) for k, v in inputs.items()}
-        with torch.no_grad():
-            outputs = self.mess_classifier(**inputs)
+        dataset = ClassificationDataset(
+            x=[request.doc["passage"] if "passage" in request.doc else request.doc["text"]],
+            y=[label],
+            tokenizer=self.classifier_tokenizer
+        )
 
-        preds = outputs.logits
-        # probs = torch.softmax(preds, dim=-1)
+        loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=1)
 
-        print(f"PROBS: ", preds)
+        self.energy_monitor.begin_window(f"classifier_prediction_step")
+        stepper = 0
+        step_loss = 0.0
+
+        preference = None
+        for i, batch in enumerate(loader):
+            input_ids = batch['input_ids'].to(self.classifier_device)
+            attention_mask = batch['attention_mask'].to(self.classifier_device)
+            labels = batch['label'].to(self.classifier_device)
+
+            with torch.no_grad():
+                outputs = self.mess_classifier(input_ids, attention_mask)
+                loss = self.classifier_criterion(outputs, labels.float())
+
+            step_loss += loss.item()
+            stepper += 1
+            self.classifier_running_val_loss += loss.item()
+            self.classifier_val_steps += 1
+
+            preference = torch.cumsum(outputs, dim=0).squeeze().cpu()
+            # outputs = outputs.cpu().numpy().tolist()
+
+        measurement = self.energy_monitor.end_window(f"classifier_prediction_step")
+
+        self.wandb_run.log({
+            "classifier/pred_step_loss": float(step_loss / stepper),
+            "classifier/pred_running_loss": float(self.classifier_running_train_loss / self.classifier_train_steps),
+            "classifier/pred_step_energy": sum([v for v in measurement.gpu_energy.values()])
+        }, step=timestamp)
+
+        # inputs = tokenize_request(request=request.doc["text"], tokenizer=self.classifier_tokenizer)
+        # inputs = {k: v.to(self.mess_classifier.device) for k, v in inputs.items()}
+        # with torch.no_grad():
+        #     outputs = self.mess_classifier(**inputs)
+        #
+        # probs = outputs.logits
+        # # probs = torch.softmax(preds, dim=-1)
+        #
+        # print(f"PROBS: ", probs)
+        #
+        # return probs.cpu().numpy().tolist()
 
         # estimated_user_preferences = []
         # for idx in range(len(self.config["model_zoo"].keys())):
@@ -449,12 +635,28 @@ class MessPlusAutomaticModelSelector(object):
         #
         # return estimated_user_preferences
 
+        return preference, label
+
 
 if __name__ == "__main__":
-    config_file_path = "config/messplus/boolq_baseline.yaml"
+
+    parser = argparse.ArgumentParser(description="MESS+ Algorithm Executor with LM-Eval integration")
+    parser.add_argument(
+        "-c",
+        "--config",
+        type=str
+    )
+    parser.add_argument(
+        "-p",
+        "--project-name",
+        type=str
+    )
+
+    args = parser.parse_args()
 
     selector = MessPlusAutomaticModelSelector(
-        config_file_path=config_file_path
+        config_file_path=args.config,
+        project_name=args.project_name
     )
 
     selector.launch()

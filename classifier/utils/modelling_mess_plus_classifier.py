@@ -8,6 +8,14 @@ import torch
 from torch import nn
 
 from .metrics import compute_scores
+from .loss_fn import FocalLoss
+
+
+def mean_pooling(model_output, attention_mask):
+    # We need to make sure we only pool actual tokens and not padding.
+    # Please see for reference: https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
+    input_mask_expanded = attention_mask.unsqueeze(-1).expand(model_output.size()).float()
+    return torch.sum(model_output * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
 
 class MESSPlusMLP(nn.Module):
@@ -85,18 +93,11 @@ class MESSRouter(pl.LightningModule):
             out = self.backbone(input_ids=input_ids, attention_mask=attn_mask)
 
         # The output here is shaped as follows: (BATCH_SIZE, 768)
-        out = self.mean_pooling(out.last_hidden_state, attn_mask)
+        out = mean_pooling(out.last_hidden_state, attn_mask)
         out = self.classifier(out)
         out = torch.sigmoid(out)
 
         return out
-
-    @staticmethod
-    def mean_pooling(model_output, attention_mask):
-        # We need to make sure we only pool actual tokens and not padding.
-        # Please see for reference: https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2
-        input_mask_expanded = attention_mask.unsqueeze(-1).expand(model_output.size()).float()
-        return torch.sum(model_output * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
 
     def training_step(self, batch, batch_idx):
         input_ids = batch['input_ids']
@@ -104,8 +105,6 @@ class MESSRouter(pl.LightningModule):
         labels = batch['label']
 
         probs = self(input_ids, attention_mask)
-        print("\nOUT: ", probs)
-        print("\nLAB: ", labels)
 
         loss = self.criterion(probs, labels)
         self.log('train/loss', loss, prog_bar=True, logger=True)
@@ -173,3 +172,133 @@ class MESSRouter(pl.LightningModule):
 
         self.metrics_df = pd.DataFrame()
         self.val_losses = []
+
+
+class MESSRouterNoLightning(nn.Module):
+
+    def __init__(
+        self,
+        base_model,
+        model_list: list,
+        hidden_layer_shape: list,
+        n_classes: int = 3,
+        n_epochs: int = 3,
+        gamma: int = 2
+    ):
+        super().__init__()
+        self.focal_gamma = gamma
+        self.weight = torch.ones((1, 3))
+        self.criterion = None
+        self.criterion_name = "bce"
+
+        self.backbone = base_model
+
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+
+        self.classifier = MESSPlusMLP(
+            self.backbone.config.hidden_size,
+            n_classes,
+            hidden_dim_shapes=hidden_layer_shape
+        )
+
+        self.n_epochs = n_epochs
+        self.criterion = nn.BCELoss()
+
+        self.model_list = model_list
+
+        # Metrics
+        self.metrics_df = pd.DataFrame()
+        self.val_losses = []
+
+    def forward(self, input_ids, attn_mask):
+        with torch.no_grad():
+            out = self.backbone(input_ids=input_ids, attention_mask=attn_mask)
+
+        # The output here is shaped as follows: (BATCH_SIZE, 768)
+        out = mean_pooling(out.last_hidden_state, attn_mask)
+        out = self.classifier(out)
+        out = torch.sigmoid(out)
+
+        return out
+
+    @staticmethod
+    def get_optimizer(optim_name: str, model, lr: float = 0.0001):
+
+        if optim_name == "sgd":
+            optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
+        elif optim_name == "adam":
+            optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+        else:
+            raise NotImplementedError("Optimizer not configured.")
+
+        return optimizer
+
+    def compute_loss(self, model, inputs, return_outputs=False):
+        labels = inputs.get("labels")
+        outputs = model(**inputs)
+        logits = outputs.get("logits")
+
+        print("Labels inside loss fn: ", labels)
+        print("Logits inside loss fn: ", logits)
+
+        self.weight = self.weight.to(logits.device)
+        loss = self.criterion(logits, labels.float())
+
+        return (loss, outputs) if return_outputs else loss
+
+    @staticmethod
+    def configure_criterion(
+        weight: torch.Tensor,
+        kind: str = "bce",
+        gamma: float = 0.0
+    ):
+
+        if kind == "bce" and gamma == 0.0:
+            criterion = torch.nn.BCELoss(weight=weight)
+        elif gamma > 0:
+            logging.info(f"Using focal loss to train classifier.")
+            assert gamma >= 0, "Make sure gamma is configured for focal loss."
+            criterion = FocalLoss(
+                alpha=weight.squeeze(),
+                gamma=gamma
+            )
+        else:
+            raise NotImplementedError("Loss criterion not implemented.")
+
+        return criterion
+
+    def update_class_weights(self, df) -> None:
+        """
+        When doing online learning we can only update the class weights "as we go".
+        :param df: Pandas dataframe with 'label' column containing preference labels the classifier has seen up to
+                    timestep t
+        :return:
+        """
+        self.weight = self.compute_class_weights(df)
+
+        if self.criterion_name == "focal_bce":
+            self.criterion.update_alpha(self.weight.squeeze())
+
+    @staticmethod
+    def compute_class_weights(df) -> torch.Tensor:
+
+        def coerce_dtype(x):
+            if type(x) is str:
+                return eval(x)
+
+            return x
+
+        df["label"] = df["label"].apply(lambda x: coerce_dtype(x))
+
+        label_matrix = np.stack(df["label"].values, axis=0)
+        num_samples, num_labels = label_matrix.shape
+
+        counts = label_matrix.sum(axis=0)
+        freq = counts / (num_samples + 1e-9)
+
+        weights = 1.0 / (freq + 1e-9)
+        weights = weights / weights.mean()
+        weights = weights.reshape(1, num_labels)
+
+        return torch.as_tensor(weights, dtype=torch.float)

@@ -18,3 +18,12 @@ pip install -r requirements.txt
 ```
 
 You are good to go.
+
+## Running MESS+ Experiments
+
+Pick a configuration file from the `config/messplus/` folder and run the following command:
+```commandline
+python3 mess_plus.py --config config/messplus/boolq.yaml --project-name mess-plus-benchmarks-v1
+```
+You can provide a `--project-name` of your choice. 
+Make sure to check the GPU utilization settings and adjust them per your individual setup.

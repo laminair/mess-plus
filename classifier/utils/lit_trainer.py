@@ -1,8 +1,10 @@
 import logging
+from typing import Any
 
 import numpy as np
 import pytorch_lightning as pl
 import torch
+from pytorch_lightning.utilities.types import STEP_OUTPUT
 
 from .loss_fn import FocalLoss
 
@@ -20,9 +22,6 @@ class MESSPlusTrainer(pl.Trainer):
         labels = inputs.get("labels")
         outputs = model(**inputs)
         logits = outputs.get("logits")
-
-        print("Labels inside loss fn: ", labels)
-        print("Logits inside loss fn: ", logits)
 
         self.weight = self.weight.to(logits.device)
         loss = self.criterion(logits, labels.float())
@@ -82,3 +81,15 @@ class MESSPlusTrainer(pl.Trainer):
         weights = weights.reshape(1, num_labels)
 
         return torch.as_tensor(weights, dtype=torch.float)
+
+
+class LoggerCallback(pl.Callback):
+
+    def __init__(self, wandb_run):
+        self.stats = []
+
+        self.wandb_run = wandb_run
+
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx) -> None:
+        logs = {f"classifier/loss": outputs["loss"].cpu().numpy().item()}
+        self.wandb_run.log(logs)
