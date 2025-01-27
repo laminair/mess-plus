@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import gc
+import json
 import logging
 import os
 
@@ -8,7 +9,6 @@ import pandas as pd
 import transformers
 import torch
 import numpy as np
-import pytorch_lightning as pl
 import wandb
 import yaml
 
@@ -16,12 +16,26 @@ from numpy.random import binomial
 from torch.utils.data import DataLoader
 from vllm.distributed.parallel_state import destroy_model_parallel, destroy_distributed_environment
 
-from lm_eval.evaluator_utils import get_sample_size, get_task_list,	print_writeout
+from lm_eval.utils import hash_string, handle_non_serializable
+from lm_eval.evaluator_utils import (
+    get_sample_size,
+    get_task_list,
+    print_writeout,
+    consolidate_results,
+    consolidate_group_results,
+    get_subtask_list,
+    prepare_print_tasks
+)
 from lm_eval.tasks import Task, TaskManager, get_task_dict
 from lm_eval.api.task import Instance
 
 from utils.mess_lm_eval_harness.vllm_v2 import MessLMEvalVLLM
-from classifier.utils import MESSRouterNoLightning, MESSOnlineLightningDataloader, tokenize_request, ClassificationDataset
+from classifier.utils import (
+    MESSRouterNoLightning,
+    MESSOnlineLightningDataloader,
+    tokenize_request,
+    ClassificationDataset
+)
 
 from zeus.monitor import ZeusMonitor
 
@@ -84,6 +98,8 @@ class MessPlusAutomaticModelSelector(object):
         # LM Eval Config
         task_manager = TaskManager(verbosity="INFO")
 
+        self.limits = []
+
         self.task_dict = get_task_dict(self.lm_eval_config["benchmarks"], task_manager)
         self.task_dict = self.__adjust_config(
             self.task_dict,
@@ -117,9 +133,65 @@ class MessPlusAutomaticModelSelector(object):
                 raise ValueError("log_samples must be True for 'bypass' metric-only tasks")
     
         limit_arg = limit_num_samples
-        limits = []
         for task_output in self.eval_tasks:
+            # This is where plugin the MESS+ custom routine.
             self.run_benchmark(task_output, limit_arg)
+
+        results, samples, configs, versions, num_fewshot, higher_is_better, = consolidate_results(eval_tasks)
+
+        ### Calculate group metrics ###
+        show_group_table = False
+        if bool(results):
+            results, versions, show_group_table, *_ = consolidate_group_results(
+                results, versions, self.task_dict
+            )
+
+        results_agg, group_agg = prepare_print_tasks(self.task_dict, results)
+        subtask_list = get_subtask_list(self.task_dict)
+
+        # collect all higher_is_better values for metrics
+        # in the group's subtasks.
+        _higher_is_better = {}
+        for group, task_list in subtask_list.items():
+            if len(task_list) != 0:  # subtask list will list "task_name": [] for solo tasks
+                for task in task_list:
+                    for m, h in higher_is_better[task].items():
+                        if m not in _higher_is_better.keys():
+                            _higher_is_better[m] = h
+
+                        if m in _higher_is_better and _higher_is_better[m] is not None and _higher_is_better[m] != h:
+                            logger.warning(f"Higher_is_better values for metric {m} in group {group} are not consistent. Defaulting to None.")
+                            _higher_is_better[m] = None
+
+                higher_is_better[group] = _higher_is_better
+
+        results_dict = {
+            "results": dict(results_agg.items()),
+            **(
+                {"groups": dict(group_agg.items())}
+                if (bool(group_agg) & show_group_table)
+                else {}
+            ),
+            "group_subtasks": dict(reversed(subtask_list.items())),
+            "configs": dict(sorted(configs.items())),
+            "versions": dict(sorted(versions.items())),
+            "n-shot": dict(sorted(num_fewshot.items())),
+            "higher_is_better": dict(sorted(higher_is_better.items())),
+            "n-samples": {
+                task_output.task_name: {
+                    "original": len(task_output.task.eval_docs),
+                    "effective": min(
+                        limit if limit else len(task_output.task.eval_docs),
+                        len(task_output.task.eval_docs),
+                    ),
+                }
+                for task_output, limit in zip(eval_tasks, self.limits)
+            },
+        }
+        if log_samples:
+            results_dict["samples"] = dict(samples)
+
+        return results_dict
 
     def run_benchmark(
         self,
@@ -131,13 +203,14 @@ class MessPlusAutomaticModelSelector(object):
         apply_chat_template: bool = False,
         fewshot_as_multiturn: bool = False,
         write_out: bool = False,
+        log_samples: bool = False
     ):
         task: Task = task_output.task
         smallest_model_category, smallest_model_instance = next(iter(self.vllm_models.items()))
         smallest_model_instance = smallest_model_instance["vllm_eval_instance"]
 
         limit = get_sample_size(task, limit_arg)
-        # limits.append(limit)
+        self.limits.append(limit)
         task.build_all_requests(
             limit=limit,
             rank=0,
@@ -185,7 +258,67 @@ class MessPlusAutomaticModelSelector(object):
                 # We initialize one classifier model for every benchmark
                 self.__warmup_classifier_model()
                 for idx, request in enumerate(cloned_reqs):
-                    self.run_request(request, timestamp=idx)
+                    _, _, output = self.run_request(request, timestamp=idx)
+                    request.resps.append(output)
+
+        ### Postprocess outputs ###
+        task.apply_filters()
+
+        ### Collect values of metrics on all datapoints ###
+        # # unpack results and sort back in order and return control to Task
+        # Pre-process task.instances to group by doc_id
+        instances_by_doc_id = defaultdict(list)
+        for instance in task.instances:
+            instances_by_doc_id[instance.doc_id].append(instance)
+        # Sort instances within each group
+        for instances in instances_by_doc_id.values():
+            instances.sort(key=lambda x: x.idx)
+        # iterate over different filters used
+        for filter_key in task.instances[0].filtered_resps.keys():
+            doc_iterator = task.doc_iterator(
+                rank=0, limit=limit, world_size=1
+            )
+
+            for doc_id, doc in doc_iterator:
+                requests = instances_by_doc_id[doc_id]
+                print(requests)
+                metrics = task.process_results(
+                    doc, [req.filtered_resps[filter_key] for req in requests]
+                )
+                if log_samples:
+                    target = task.doc_to_target(doc)
+                    example = {
+                        "doc_id": doc_id,
+                        "doc": doc,
+                        "target": target,
+                        "arguments": [req.args for req in requests],
+                        "resps": [req.resps for req in requests],
+                        "filtered_resps": [
+                            req.filtered_resps[filter_key] for req in requests
+                        ],
+                        "filter": filter_key,
+                        "metrics": list(metrics.keys()),
+                        "doc_hash": hash_string(
+                            json.dumps(
+                                requests[0].doc,
+                                indent=2,
+                                default=handle_non_serializable,
+                                ensure_ascii=False,
+                            )
+                        ),
+                        "prompt_hash": hash_string(requests[0].arguments[0]),
+                        "target_hash": hash_string(str(target)),
+                    }
+                    example.update(metrics)
+                    task_output.logged_samples.append(example)
+                for metric, value in metrics.items():
+                    task_output.sample_metrics[(metric, filter_key)].append(value)
+
+        ### Aggregate results over all datapoints ###
+        # aggregate results ; run bootstrap CIs
+        task_output.calculate_aggregate_metric(bootstrap_iters=bootstrap_iters)
+
+        return None
 
     def query_model(self, model, request, model_category):
         self.energy_monitor.begin_window(f"pass_{model_category}")
@@ -203,12 +336,14 @@ class MessPlusAutomaticModelSelector(object):
         return output
 
     def run_request(self, request: Instance, timestamp: int = 0):
+        model_categories = [i for i in self.vllm_models.keys()]
         x_t = self.__sample_from_bernoulli(c=self.algorithm_config["c"], timestamp=timestamp)
     
         if x_t == 1: 
             logger.info(f"Exploring during step {timestamp}.")
             
-            label = self.__get_inference_model_labels(request=request)
+            label, outputs = self.__get_inference_model_labels(request=request)
+            output = outputs[model_categories[-1]]
 
             label = torch.tensor(label)
             model_category = [i for i in self.vllm_models.keys()][-1]
@@ -227,13 +362,13 @@ class MessPlusAutomaticModelSelector(object):
             # The last GPU is always used to train an run inference for the classifier model.
             logs = {"energy/train_classifier": cp_measurement.gpu_energy[gpu_keys[-1]]}
             logs.update({
-                f"preds/infer_{cat}": label[idx] for idx, cat in enumerate(self.vllm_models.keys())
+                f"preds/infer_{cat}": label[idx] for idx, cat in enumerate(model_categories)
             })
 
             for idx, cat in enumerate(self.vllm_models.keys()):
                 logs.update({f"energy/infer_{cat}": sum([v for v in self.measurements[cat][-1].gpu_energy.values()])})
 
-            logs.update({f"time/infer_{cat}": self.measurements[cat][-1].time for idx, cat in enumerate(self.vllm_models.keys())})
+            logs.update({f"time/infer_{cat}": self.measurements[cat][-1].time for idx, cat in enumerate(model_categories)})
             logs.update({
                 f"algorithm/infer_response_{model_category}": final_response
             })
@@ -278,17 +413,17 @@ class MessPlusAutomaticModelSelector(object):
                 f"algorithm/choice_accuracy": float(self.algorithm_correct_choices / timestamp),
                 f"algorithm/q_size": self.Q
             })
-            model_category = [i for i in self.vllm_models.keys()][choice_idx]
+            model_category = model_categories[choice_idx]
 
             # Query the model of choice
             # This is what the output looks like: [(-1.7801642417907715, False)] (neg log-likelihood, Response)
-            final_response = self.query_model(
+            output = self.query_model(
                 self.vllm_models[model_category],
                 request, 
                 model_category
             )
 
-            final_response = int(final_response[0][1])
+            final_response = int(output[0][1])
             logs.update({f"algorithm/infer_response_{model_category}": final_response})
             logs.update({f"algorithm/infer_energy_{model_category}": sum([v for v in self.measurements[model_category][-1].gpu_energy.values()])})
 
@@ -297,7 +432,7 @@ class MessPlusAutomaticModelSelector(object):
         # Queue update based on satisfaction rate.
         self.Q = max(0.0, self.Q + self.algorithm_config["alpha"] - final_response)
 
-        return final_response, model_category
+        return final_response, model_category, output
 
     def __sample_from_bernoulli(self, c: float, timestamp: int):
 
@@ -527,9 +662,9 @@ class MessPlusAutomaticModelSelector(object):
         return adjusted_task_dict
 
     def __get_inference_model_labels(self, request):
-        model_resps_mapping = {i: [] for i in self.vllm_models.keys()}
+        outputs = {i: [] for i in self.vllm_models.keys()}
         for model_category, model in self.vllm_models.items():
-            model_resps_mapping[model_category] = self.query_model(
+            outputs[model_category] = self.query_model(
                 model,
                 request,
                 model_category
@@ -537,10 +672,10 @@ class MessPlusAutomaticModelSelector(object):
 
         # the final response
         label = []
-        for model_category, data in model_resps_mapping.items():
+        for model_category, data in outputs.items():
             label.append(0 if sum(map(lambda x: x[1], data)) / len(data) < 0.5 else 1)
 
-        return label
+        return label, outputs
 
     @staticmethod
     def validate_tasks(lm, eval_tasks, confirm_run_unsafe_code: bool = True):
@@ -569,7 +704,7 @@ class MessPlusAutomaticModelSelector(object):
 
     def estimate_user_preferences(self, request: Instance, timestamp: int):
         # We need the true labels to estimate the predictor quality.
-        label = self.__get_inference_model_labels(request=request)
+        label, _ = self.__get_inference_model_labels(request=request)
 
         dataset = ClassificationDataset(
             x=[request.doc["passage"] if "passage" in request.doc else request.doc["text"]],
@@ -659,4 +794,6 @@ if __name__ == "__main__":
         project_name=args.project_name
     )
 
-    selector.launch()
+    selector.launch(
+        limit_num_samples=5
+    )

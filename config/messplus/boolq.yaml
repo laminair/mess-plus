@@ -6,12 +6,12 @@ model_zoo:
     category: "small"
     gpu_indices: [0]
     max_seq_len: 2048
-    gpu_memory_utilization: 0.42
+    gpu_memory_utilization: 0.45
   meta-llama/Llama-3.2-3B-Instruct:
     category: "medium"
     gpu_indices: [0]
     max_seq_len: 2048
-    gpu_memory_utilization: 0.42
+    gpu_memory_utilization: 0.45
 #  meta-llama/Llama-3.3-70B-Instruct:
 #    category: "large"
 #    gpu_indices: [0]
