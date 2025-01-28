@@ -453,7 +453,7 @@ class MessPlusAutomaticModelSelector(object):
         self.vllm_models = {}
         self.tokenizers = {}
 
-        logger.info(f"Found {len(self.config["model_zoo"].keys())} models in zoo: {self.config["model_zoo"].keys()}")
+        logger.info(f"Found {len(self.config['model_zoo'].keys())} models in zoo: {self.config['model_zoo'].keys()}")
         for model, data in self.config["model_zoo"].items():
 
             if data["category"] not in self.vllm_models.keys():
