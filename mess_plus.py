@@ -290,7 +290,7 @@ class MessPlusAutomaticModelSelector(object):
             for doc_id, doc in doc_iterator:
                 requests = instances_by_doc_id[doc_id]
                 metrics = task.process_results(
-                    doc, [req.filtered_resps[filter_key] for req in requests]
+                    doc, [req.filtered_resps[filter_key][0] for req in requests]
                 )
                 if log_samples:
                     target = task.doc_to_target(doc)
@@ -464,7 +464,7 @@ class MessPlusAutomaticModelSelector(object):
         self.vllm_models = {}
         self.tokenizers = {}
 
-        logger.info(f"Found {len(self.config["model_zoo"].keys())} models in zoo: {self.config["model_zoo"].keys()}")
+        logger.info(f"Found {len(self.config['model_zoo'].keys())} models in zoo: {self.config['model_zoo'].keys()}")
         for model, data in self.config["model_zoo"].items():
 
             if data["category"] not in self.vllm_models.keys():
