@@ -3,6 +3,7 @@ venv/
 .ipynb_checkpoints/
 wandb/
 __pycache__/
+lightning_logs/
 
 data/
 datasets/

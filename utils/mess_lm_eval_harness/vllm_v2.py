@@ -252,8 +252,9 @@ class MessLMEvalVLLM(TemplateLM):
             kwargs = self.modify_gen_kwargs(kwargs)
             sampling_params = SamplingParams(max_tokens=max_tokens, stop=stop, **kwargs)
         else:
+            # For MESS+, we also need the de-tokenized outputs.
             sampling_params = SamplingParams(
-                temperature=0, prompt_logprobs=1, max_tokens=1, detokenize=False
+                temperature=0, prompt_logprobs=1, max_tokens=1, detokenize=True
             )
         if self.data_parallel_size > 1:
             # vLLM hangs if tensor_parallel > 1 and resources are set in ray.remote
@@ -295,6 +296,7 @@ class MessLMEvalVLLM(TemplateLM):
             use_tqdm=True if self.batch_size == "auto" else False,
             lora_request=self.lora_request,
         )
+
         return outputs
 
     def loglikelihood_rolling(
@@ -478,18 +480,14 @@ class MessLMEvalVLLM(TemplateLM):
             ctxlens = []
             for cache_key, context_enc, continuation_enc in chunk:
                 inp = (context_enc + continuation_enc)[-(self.max_length) :]
-                ctxlen = len(context_enc) - max(
-                    0, len(context_enc) + len(continuation_enc) - (self.max_length)
-                )
+                ctxlen = len(context_enc) - max(0, len(context_enc) + len(continuation_enc) - self.max_length)
 
                 inputs.append(inp)
                 ctxlens.append(ctxlen)
 
             outputs = self._model_generate(requests=inputs, generate=False)
 
-            for output, ctxlen, (cache_key, _, _), inp in zip(
-                outputs, ctxlens, chunk, inputs
-            ):
+            for output, ctxlen, (cache_key, _, _), inp in zip(outputs, ctxlens, chunk, inputs):
                 answer = self._parse_logprobs(
                     tokens=inp,
                     outputs=output,
@@ -505,10 +503,11 @@ class MessLMEvalVLLM(TemplateLM):
                     self.cache_hook.add_partial("loglikelihood", cache_key, answer)
                 pbar.update(1)
         pbar.close()
-        return re_ord.get_original(res)
 
-    @staticmethod
-    def _parse_logprobs(tokens: List, outputs, ctxlen: int) -> Tuple[float, bool]:
+        out = re_ord.get_original(res)
+        return out
+
+    def _parse_logprobs(self, tokens: List, outputs, ctxlen: int) -> Tuple[float, bool, str]:
         """Process logprobs and tokens.
 
         :param tokens: list
@@ -537,38 +536,34 @@ class MessLMEvalVLLM(TemplateLM):
             # for older versions of vLLM).
             return getattr(logprob, "logprob", logprob)
 
-        continuation_logprobs_dicts = [
-            {
+        continuation_logprobs_dicts = [{
                 token: coerce_logprob_to_num(logprob)
                 for token, logprob in logprob_dict.items()
-            }
-            if logprob_dict is not None
-            else None
-            for logprob_dict in continuation_logprobs_dicts
+            } if logprob_dict is not None else None for logprob_dict in continuation_logprobs_dicts
         ]
 
         # Calculate continuation_logprobs
         # assume ctxlen always >= 1
         continuation_logprobs = sum(
-            logprob_dict.get(token)
-            for token, logprob_dict in zip(
-                tokens[ctxlen:], continuation_logprobs_dicts[ctxlen:]
-            )
+            logprob_dict.get(token) for token, logprob_dict in zip(tokens[ctxlen:], continuation_logprobs_dicts[ctxlen:])
         )
 
         # Determine if is_greedy
         is_greedy = True
-        for token, logprob_dict in zip(
-            tokens[ctxlen:], continuation_logprobs_dicts[ctxlen:]
-        ):
+        response_token = None
+        for token, logprob_dict in zip(tokens[ctxlen:], continuation_logprobs_dicts[ctxlen:]):
             # Get the token with the maximum log probability from the logprob_dict
             if logprob_dict:  # Ensure the logprob_dict is not None
                 top_token = max(logprob_dict, key=logprob_dict.get)
+                response_token = top_token
+
                 if top_token != token:
                     is_greedy = False
                     break
 
-        return continuation_logprobs, is_greedy
+        answer = self.tokenizer.decode(response_token)
+        answer = answer.strip().lower()
+        return continuation_logprobs, is_greedy, answer
 
     @staticmethod
     def modify_gen_kwargs(kwargs: dict) -> dict:
