@@ -283,7 +283,7 @@ class MessPlusAutomaticModelSelector(object):
                 requests = instances_by_doc_id[doc_id]
                 print(requests)
                 metrics = task.process_results(
-                    doc, [req.filtered_resps[filter_key] for req in requests]
+                    doc, [req.filtered_resps[filter_key][0] for req in requests]
                 )
                 if log_samples:
                     target = task.doc_to_target(doc)
