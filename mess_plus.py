@@ -31,6 +31,7 @@ from lm_eval.tasks import Task, TaskManager, get_task_dict
 from lm_eval.api.task import Instance
 
 from utils.mess_lm_eval_harness.vllm_v2 import MessLMEvalVLLM
+from utils.misc import is_nested_list
 from classifier.utils import (
     MESSRouterNoLightning,
     ClassificationDataset
@@ -99,6 +100,7 @@ class MessPlusAutomaticModelSelector(object):
         # LM Eval Config
         task_manager = TaskManager(verbosity="INFO")
 
+        self.limit_num_samples = self.lm_eval_config["limit_num_samples"]
         self.limits = []
 
         self.task_dict = get_task_dict(self.lm_eval_config["benchmarks"], task_manager)
@@ -114,7 +116,6 @@ class MessPlusAutomaticModelSelector(object):
 
     def launch(
         self,
-        limit_num_samples: int = None,
         apply_chat_template: bool = False,
         log_samples: bool = False
     ):
@@ -125,20 +126,20 @@ class MessPlusAutomaticModelSelector(object):
             )
     
         # get lists of group hierarchy and each type of request
-        eval_tasks = get_task_list(self.task_dict)
         if not log_samples:
             if not all(
                     "bypass" not in getattr(task_output.task, "_metric_fn_list", {}).keys()
-                    for task_output in eval_tasks
+                    for task_output in self.eval_tasks
             ):
                 raise ValueError("log_samples must be True for 'bypass' metric-only tasks")
-    
-        limit_arg = limit_num_samples
+
+        limit_arg = self.limit_num_samples
         for task_output in self.eval_tasks:
             # This is where plugin the MESS+ custom routine.
             self.run_benchmark(task_output, limit_arg)
 
-        results, samples, configs, versions, num_fewshot, higher_is_better, = consolidate_results(eval_tasks)
+        print(self.eval_tasks)
+        results, samples, configs, versions, num_fewshot, higher_is_better, = consolidate_results(self.eval_tasks)
 
         ### Calculate group metrics ###
         show_group_table = False
@@ -186,13 +187,14 @@ class MessPlusAutomaticModelSelector(object):
                         len(task_output.task.eval_docs),
                     ),
                 }
-                for task_output, limit in zip(eval_tasks, self.limits)
+                for task_output, limit in zip(self.eval_tasks, self.limits)
             },
         }
         if log_samples:
             results_dict["samples"] = dict(samples)
 
         print(results_dict)
+        print(results)
 
         return results_dict
 
@@ -289,9 +291,14 @@ class MessPlusAutomaticModelSelector(object):
 
             for doc_id, doc in doc_iterator:
                 requests = instances_by_doc_id[doc_id]
-                metrics = task.process_results(
-                    doc, [req.filtered_resps[filter_key][0] for req in requests]
-                )
+                results_input = []
+                for req in requests:
+                    if is_nested_list(req.filtered_resps[filter_key]):
+                        results_input.append(req.filtered_resps[filter_key][0])
+                    else:
+                        results_input.append(req.filtered_resps[filter_key])
+
+                metrics = task.process_results(doc, results_input)
                 if log_samples:
                     target = task.doc_to_target(doc)
                     example = {
@@ -324,6 +331,8 @@ class MessPlusAutomaticModelSelector(object):
         ### Aggregate results over all datapoints ###
         # aggregate results ; run bootstrap CIs
         task_output.calculate_aggregate_metric(bootstrap_iters=bootstrap_iters)
+
+        self.__evict_vllm_models()
 
         return None
 
@@ -479,7 +488,8 @@ class MessPlusAutomaticModelSelector(object):
                     gpu_indices=data["gpu_indices"],
                     trust_remote_code=True,
                     tensor_parallel_size=len(data["gpu_indices"]),
-                    gpu_memory_utilization=data["gpu_memory_utilization"], 
+                    gpu_memory_utilization=data["gpu_memory_utilization"],
+                    quantization=data["quantization"],
                     seed=self.config["seed"]
                 )
             }
@@ -729,6 +739,9 @@ class MessPlusAutomaticModelSelector(object):
 
         return preference, label
 
+    def shutdown(self):
+        self.__evict_vllm_models()
+
 
 if __name__ == "__main__":
 
@@ -751,6 +764,7 @@ if __name__ == "__main__":
         project_name=args.project_name
     )
 
-    selector.launch(
-        limit_num_samples=100
-    )
+    try:
+        selector.launch()
+    except KeyboardInterrupt or AttributeError:
+        selector.shutdown()

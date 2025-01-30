@@ -7,11 +7,13 @@ model_zoo:
     gpu_indices: [0]
     max_seq_len: 2048
     gpu_memory_utilization: 0.45
-  meta-llama/Llama-3.2-3B-Instruct:
+    quantization: null
+  unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit:
     category: "medium"
     gpu_indices: [0]
     max_seq_len: 2048
     gpu_memory_utilization: 0.45
+    quantization: "bitsandbytes"
 #  meta-llama/Llama-3.3-70B-Instruct:
 #    category: "large"
 #    gpu_indices: [0]
@@ -34,9 +36,9 @@ classifier_model:
 algorithm:
   alpha: 0.8
   c: 1
-  V: 1
+  V: 100
 
 lm_eval:
   # The run name will be the first benchmark in the list below.
   benchmarks: ["boolq"]
-  limit_num_samples: null
+  limit_num_samples: 1000

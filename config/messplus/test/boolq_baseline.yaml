@@ -38,4 +38,4 @@ algorithm:
 
 lm_eval:
   benchmarks: ["boolq"]
-  limit_num_samples: null
+  limit_num_samples: 100

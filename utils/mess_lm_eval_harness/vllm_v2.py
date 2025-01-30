@@ -116,6 +116,8 @@ class MessLMEvalVLLM(TemplateLM):
                 trust_remote_code=True,
                 tensor_parallel_size=int(tensor_parallel_size),
                 gpu_memory_utilization=gpu_memory_utilization,
+                quantization=quantization,
+                load_format=quantization if quantization is not None else "auto",
                 seed=seed
                 )
         else:
