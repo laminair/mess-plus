@@ -55,7 +55,7 @@ class MessLMEvalVLLM(TemplateLM):
         prefix_token_id: Optional[int] = None,
         tensor_parallel_size: int = 1,
         quantization: Optional[str] = None,
-        max_gen_toks: int = 256,
+        max_gen_toks: int = 512,
         swap_space: int = 4,
         batch_size: Union[str, int] = 1,
         max_batch_size=None,
@@ -67,6 +67,7 @@ class MessLMEvalVLLM(TemplateLM):
         data_parallel_size: int = 1,
         lora_local_path: str = None,
         gpu_indices: list = None,
+        enforce_eager: bool = False,
         **kwargs,
     ):
         super().__init__()
@@ -118,7 +119,8 @@ class MessLMEvalVLLM(TemplateLM):
                 gpu_memory_utilization=gpu_memory_utilization,
                 quantization=quantization,
                 load_format=quantization if quantization is not None else "auto",
-                seed=seed
+                seed=seed,
+                enforce_eager=enforce_eager,
                 )
         else:
             eval_logger.warning(
@@ -252,11 +254,20 @@ class MessLMEvalVLLM(TemplateLM):
     ):
         if generate:
             kwargs = self.modify_gen_kwargs(kwargs)
-            sampling_params = SamplingParams(max_tokens=max_tokens, stop=stop, **kwargs)
+            sampling_params = SamplingParams(
+                max_tokens=max_tokens,
+                stop=stop,
+                logprobs=1,
+                **kwargs
+            )
         else:
             # For MESS+, we also need the de-tokenized outputs.
             sampling_params = SamplingParams(
-                temperature=0, prompt_logprobs=1, max_tokens=1, detokenize=True
+                temperature=0,
+                prompt_logprobs=1,
+                logprobs=1,
+                # max_tokens=1,
+                detokenize=True
             )
         if self.data_parallel_size > 1:
             # vLLM hangs if tensor_parallel > 1 and resources are set in ray.remote
@@ -503,6 +514,7 @@ class MessLMEvalVLLM(TemplateLM):
                     # all with cache key None. instead do add_partial on the per-example level
                     # in the loglikelihood_rolling() function for those.
                     self.cache_hook.add_partial("loglikelihood", cache_key, answer)
+
                 pbar.update(1)
         pbar.close()
 
@@ -565,6 +577,7 @@ class MessLMEvalVLLM(TemplateLM):
 
         answer = self.tokenizer.decode(response_token)
         answer = answer.strip().lower()
+
         return continuation_logprobs, is_greedy, answer
 
     @staticmethod

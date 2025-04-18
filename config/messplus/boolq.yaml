@@ -1,19 +1,21 @@
 run_name: "baseline"
 seed: 42
 
+# You need to load the models in inverse order as the CUDA graph generation takes extra space that goes beyond the
+# memory utilization limit...
 model_zoo:
-  meta-llama/Llama-3.2-1B-Instruct:
-    category: "small"
-    gpu_indices: [0]
-    max_seq_len: 2048
-    gpu_memory_utilization: 0.45
-    quantization: null
   unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit:
     category: "medium"
     gpu_indices: [0]
     max_seq_len: 2048
-    gpu_memory_utilization: 0.45
+    gpu_memory_utilization: 0.70
     quantization: "bitsandbytes"
+  meta-llama/Llama-3.2-1B-Instruct:
+    category: "small"
+    gpu_indices: [0]
+    max_seq_len: 2048
+    gpu_memory_utilization: 0.28
+    quantization: null
 #  meta-llama/Llama-3.3-70B-Instruct:
 #    category: "large"
 #    gpu_indices: [0]
@@ -21,16 +23,19 @@ model_zoo:
 
 classifier_model:
   model_id: "answerdotai/ModernBERT-base"
-  max_seq_len: 1024
-  hidden_layer_shape: [512]
-  optimizer: "adam"
-  beta1: 0.9
-  beta2: 0.99
-  lr: 0.0001
-  minibatch_size: 1
   epochs: 1
-  reweight_classes: true
-  gamma: 2
+  learning_rate: 2e-5
+  weight_decay: 0.01
+  batch_size: 16  # This only has an effect when memory dataset is activated
+  max_length: 128
+  warmup_ratio: 0.1
+  threshold: 0.5
+  dropout_rate: 0.1
+  freeze_bert_layers: true
+  memory_size: 0
+  memory_strategy: random # This only works when memory_size > 0
+  reset_optimizer: false
+  regularization_lambda: 0.0
   gpu_index: 0
 
 algorithm:
@@ -41,4 +46,6 @@ algorithm:
 lm_eval:
   # The run name will be the first benchmark in the list below.
   benchmarks: ["boolq"]
-  limit_num_samples: 1000
+  limit_num_samples: 2
+  enforce_eager: false
+  write_to_disk: false

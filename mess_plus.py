@@ -30,17 +30,15 @@ from lm_eval.evaluator_utils import (
 from lm_eval.tasks import Task, TaskManager, get_task_dict
 from lm_eval.api.task import Instance
 
+from utils.data_capturing import StreamingDataProcessor, DataExtractor
 from utils.mess_lm_eval_harness.vllm_v2 import MessLMEvalVLLM
-from utils.misc import is_nested_list
-from classifier.utils import (
-    MESSRouterNoLightning,
-    ClassificationDataset
-)
+from classifier.model import ContinualMultilabelBERTClassifier
+from classifier.dataset import BertPandasDataset
 
 from zeus.monitor import ZeusMonitor
 
 from collections import defaultdict
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Any
 
 logging.basicConfig(
     level=logging.INFO,
@@ -113,6 +111,16 @@ class MessPlusAutomaticModelSelector(object):
         )
 
         self.eval_tasks = get_task_list(self.task_dict)
+
+        # Config to capture the inference outputs for classifier validation
+        self.infer_data_processor = StreamingDataProcessor(
+            save_path=f"data/inference_outputs/",
+            file_prefix="inference_data_",
+            save_frequency=100
+        )
+
+        self.reference_data_reader = DataExtractor()
+
 
     def launch(
         self,
@@ -193,9 +201,6 @@ class MessPlusAutomaticModelSelector(object):
         if log_samples:
             results_dict["samples"] = dict(samples)
 
-        print(results_dict)
-        print(results)
-
         return results_dict
 
     def run_benchmark(
@@ -251,6 +256,7 @@ class MessPlusAutomaticModelSelector(object):
             for req in reqs:
                 cloned_reqs.extend([req] * req.repeats)
 
+            logger.info(f"Dataset repeats factor: {len(cloned_reqs) / len(requests[reqtype])}")
             with wandb.init(
                 project=self.wandb_project_name,
                 name=f"{self.config['lm_eval']['benchmarks'][0]}",
@@ -261,198 +267,244 @@ class MessPlusAutomaticModelSelector(object):
                 self.wandb_run.summary["alpha"] = self.algorithm_config["alpha"]
                 self.wandb_run.summary["c"] = self.algorithm_config["c"]
 
-                # We initialize one classifier model for every benchmark
-                self.__warmup_classifier_model()
                 for idx, request in enumerate(cloned_reqs):
-                    _, _, output = self.run_request(request, timestamp=idx)
-                    for out in output:
-                        request.resps.append(
-                            (out[0], out[1])
-                        )
+                    outputs = self.run_request(request, timestamp=idx)
+                    reference_data = self.reference_data_reader.get_data(
+                        benchmark_name=f"{self.config['lm_eval']['benchmarks'][0]}",
+                        request=request
+                    )
+                    self.infer_data_processor.process_row(
+                        outputs,
+                        input_text=reference_data["input_data"],
+                        ground_truth=reference_data["ground_truth"],
+                        doc_id=reference_data["doc_id"],
+                        benchmark_name=f"{self.config['lm_eval']['benchmarks'][0]}",
+                        write_to_disk=self.lm_eval_config["write_to_disk"]
+                    )
 
+                # We initialize one classifier model for every benchmark
+                # self.__warmup_classifier_model()
+                # for idx, request in enumerate(cloned_reqs):
+                #     _, _, output = self.run_request(request, timestamp=idx)
+                #     for out in output:
+                #         request.resps.append(
+                #             (out[0], out[1])
+                #         )
 
-        ### Postprocess outputs ###
-        task.apply_filters()
+        # ### Postprocess outputs ###
+        # task.apply_filters()
+        #
+        # ### Collect values of metrics on all datapoints ###
+        # # # unpack results and sort back in order and return control to Task
+        # # Pre-process task.instances to group by doc_id
+        # instances_by_doc_id = defaultdict(list)
+        # for instance in task.instances:
+        #     instances_by_doc_id[instance.doc_id].append(instance)
+        # # Sort instances within each group
+        # for instances in instances_by_doc_id.values():
+        #     instances.sort(key=lambda x: x.idx)
+        # # iterate over different filters used
+        # for filter_key in task.instances[0].filtered_resps.keys():
+        #     doc_iterator = task.doc_iterator(
+        #         rank=0, limit=limit, world_size=1
+        #     )
+        #
+        #     for doc_id, doc in doc_iterator:
+        #         requests = instances_by_doc_id[doc_id]
+        #         results_input = []
+        #         for req in requests:
+        #             if is_nested_list(req.filtered_resps[filter_key]):
+        #                 results_input.append(req.filtered_resps[filter_key][0])
+        #             else:
+        #                 results_input.append(req.filtered_resps[filter_key])
+        #
+        #         metrics = task.process_results(doc, results_input)
+        #         if log_samples:
+        #             target = task.doc_to_target(doc)
+        #             example = {
+        #                 "doc_id": doc_id,
+        #                 "doc": doc,
+        #                 "target": target,
+        #                 "arguments": [req.args for req in requests],
+        #                 "resps": [req.resps for req in requests],
+        #                 "filtered_resps": [
+        #                     req.filtered_resps[filter_key] for req in requests
+        #                 ],
+        #                 "filter": filter_key,
+        #                 "metrics": list(metrics.keys()),
+        #                 "doc_hash": hash_string(
+        #                     json.dumps(
+        #                         requests[0].doc,
+        #                         indent=2,
+        #                         default=handle_non_serializable,
+        #                         ensure_ascii=False,
+        #                     )
+        #                 ),
+        #                 "prompt_hash": hash_string(requests[0].arguments[0]),
+        #                 "target_hash": hash_string(str(target)),
+        #             }
+        #             example.update(metrics)
+        #             task_output.logged_samples.append(example)
+        #         for metric, value in metrics.items():
+        #             task_output.sample_metrics[(metric, filter_key)].append(value)
+        #
+        # ### Aggregate results over all datapoints ###
+        # # aggregate results ; run bootstrap CIs
+        # task_output.calculate_aggregate_metric(bootstrap_iters=bootstrap_iters)
 
-        ### Collect values of metrics on all datapoints ###
-        # # unpack results and sort back in order and return control to Task
-        # Pre-process task.instances to group by doc_id
-        instances_by_doc_id = defaultdict(list)
-        for instance in task.instances:
-            instances_by_doc_id[instance.doc_id].append(instance)
-        # Sort instances within each group
-        for instances in instances_by_doc_id.values():
-            instances.sort(key=lambda x: x.idx)
-        # iterate over different filters used
-        for filter_key in task.instances[0].filtered_resps.keys():
-            doc_iterator = task.doc_iterator(
-                rank=0, limit=limit, world_size=1
-            )
-
-            for doc_id, doc in doc_iterator:
-                requests = instances_by_doc_id[doc_id]
-                results_input = []
-                for req in requests:
-                    if is_nested_list(req.filtered_resps[filter_key]):
-                        results_input.append(req.filtered_resps[filter_key][0])
-                    else:
-                        results_input.append(req.filtered_resps[filter_key])
-
-                metrics = task.process_results(doc, results_input)
-                if log_samples:
-                    target = task.doc_to_target(doc)
-                    example = {
-                        "doc_id": doc_id,
-                        "doc": doc,
-                        "target": target,
-                        "arguments": [req.args for req in requests],
-                        "resps": [req.resps for req in requests],
-                        "filtered_resps": [
-                            req.filtered_resps[filter_key] for req in requests
-                        ],
-                        "filter": filter_key,
-                        "metrics": list(metrics.keys()),
-                        "doc_hash": hash_string(
-                            json.dumps(
-                                requests[0].doc,
-                                indent=2,
-                                default=handle_non_serializable,
-                                ensure_ascii=False,
-                            )
-                        ),
-                        "prompt_hash": hash_string(requests[0].arguments[0]),
-                        "target_hash": hash_string(str(target)),
-                    }
-                    example.update(metrics)
-                    task_output.logged_samples.append(example)
-                for metric, value in metrics.items():
-                    task_output.sample_metrics[(metric, filter_key)].append(value)
-
-        ### Aggregate results over all datapoints ###
-        # aggregate results ; run bootstrap CIs
-        task_output.calculate_aggregate_metric(bootstrap_iters=bootstrap_iters)
-
+        self.infer_data_processor.finalize(write_to_disk=self.lm_eval_config["write_to_disk"])
         self.__evict_vllm_models()
 
         return None
 
-    def query_model(self, model, request, model_category) -> List[Tuple[float, bool, str]]:
+    def query_model(self, model, request, model_category) -> Tuple[List[float], List[str], List[bool]]:
         self.energy_monitor.begin_window(f"pass_{model_category}")
-        output = getattr(
-            model["vllm_eval_instance"],
-            request.request_type
-        )(
-            [request] if type(request) is not list else request, disable_tqdm=True
-        )
+
+        try:
+            output = getattr(
+                model["vllm_eval_instance"],
+                request.request_type
+            )(
+                [request] if type(request) is not list else request, disable_tqdm=True
+            )
+        except torch.OutOfMemoryError as e:
+            output = None
+            logger.error(f"Encountered error processing document #{request.doc_id}: {e}")
 
         measurement = self.energy_monitor.end_window(f"pass_{model_category}")
         self.measurements[model_category].append(measurement)
 
-        outputs = []
-        ground_truth = request.arguments[1].strip().lower()
-        for out in output:
-            pred = out[-1]
-            score = int(ground_truth == pred)
-            outputs.append((out[0], out[1], score))
+        nll_scores = []
+        responses = []
+        correct = []
+        if output is not None:
+            ground_truth = request.arguments[1].strip().lower()
+            for out in output:
+                nll_scores.append(out[0])
+                responses.append(out[2])
+                correct.append(bool(out[2] == ground_truth))
 
-            self.ground_truths[model_category].append(ground_truth)
-            self.predictions[model_category].append(pred)
-            self.scores[model_category].append(score)
+                self.ground_truths[model_category].append(ground_truth)
+                self.predictions[model_category].append(out[2])
+                self.scores[model_category].append(out[0])
 
-        return outputs
+        return nll_scores, responses, correct
 
     def run_request(self, request: Instance, timestamp: int = 0):
         model_categories = [i for i in self.vllm_models.keys()]
         x_t = self.__sample_from_bernoulli(c=self.algorithm_config["c"], timestamp=timestamp)
-    
-        if x_t == 1: 
-            logger.info(f"Exploring during step {timestamp}.")
-            
-            label, outputs = self.__get_inference_model_labels(request=request)
-            output = outputs[model_categories[-1]]
 
-            label = torch.tensor(label)
-            model_category = [i for i in self.vllm_models.keys()][-1]
-            final_response = output[0][-1]
+        logger.info(f"Running request #{timestamp}...")
 
-            # Train the classifier
-            cp_measurement = self.__train_classifier_one_step(request=request, label=label.tolist(), timestep=timestamp)
-            gpu_keys = [i for i in cp_measurement.gpu_energy.keys()]
+        outputs = self.__get_inference_model_labels(request=request)
 
-            # The last GPU is always used to train an run inference for the classifier model.
-            logs = {"energy/train_classifier": cp_measurement.gpu_energy[gpu_keys[-1]]}
-            logs.update({
-                f"preds/infer_{cat}": label[idx] for idx, cat in enumerate(model_categories)
-            })
+        print(outputs)
 
-            for idx, cat in enumerate(self.vllm_models.keys()):
-                logs.update({f"energy/infer_{cat}": sum([v for v in self.measurements[cat][-1].gpu_energy.values()])})
+        # We only keep numerical values (log_likelihood score and whether the generated response was correct)
+        # training_label = []
+        #
+        # for model, data in outputs.items():
+        #     training_label.extend(data[0])
+        #     training_label.extend([float(i) for i in data[2]])
 
-            logs.update({f"time/infer_{cat}": self.measurements[cat][-1].time for idx, cat in enumerate(model_categories)})
-            logs.update({
-                f"algorithm/infer_response_{model_category}": final_response
-            })
+        return outputs
 
-            self.wandb_run.log(logs, step=timestamp)
-    
-        else: 
-            logger.info(f"Estimating during step {timestamp}.")
-            logs = {}
-
-            preference_estimation, inference_model_label = self.estimate_user_preferences(
-                request=request,
-                timestamp=timestamp
-            )
-
-            logs.update({
-                f"algorithm/satisfaction_likelihood_{cat}": preference_estimation[idx] for idx, cat in enumerate(
-                    self.vllm_models.keys()
-                )
-            })
-
-            preference_estimation = preference_estimation.reshape(-1, 1)
-            energy = []
-            for model_category in self.measurements.keys():
-                energy.append(
-                    sum(map(lambda x: sum([i for i in x.gpu_energy.values()]) / len(self.measurements[model_category]), self.measurements[model_category]))
-                )
-
-            logs.update({f"algorithm/energy_estimate_{cat}": energy[idx] for idx, cat in enumerate(self.vllm_models.keys())})
-            energy = torch.tensor(energy).reshape(-1, 1)
-
-            # Energy and Preference Estimation are vectors.
-            cost_fn = self.algorithm_config["V"] * energy + self.Q * (self.algorithm_config["alpha"] - preference_estimation)
-            logs.update({f"algorithm/cost_fn_{cat}": cost_fn[idx].item() for idx, cat in enumerate(self.vllm_models.keys())})
-
-            choice_idx = torch.argmax(cost_fn)
-            choice_is_correct = 1 if torch.tensor(inference_model_label).reshape(-1, 1)[choice_idx].item() == 1 else 0
-            self.algorithm_correct_choices += choice_is_correct
-            logs.update({
-                f"algorithm/chosen_model": choice_idx,
-                f"algorithm/choice_correct": choice_is_correct,
-                f"algorithm/choice_accuracy": float(self.algorithm_correct_choices / timestamp),
-                f"algorithm/q_size": self.Q
-            })
-            model_category = model_categories[choice_idx]
-
-            # Query the model of choice
-            # This is what the output looks like: [(-1.7801642417907715, False)] (neg log-likelihood, Response)
-            output = self.query_model(
-                self.vllm_models[model_category],
-                request, 
-                model_category
-            )
-
-            final_response = int(output[0][1])
-            logs.update({f"algorithm/infer_response_{model_category}": final_response})
-            logs.update({f"algorithm/infer_energy_{model_category}": sum([v for v in self.measurements[model_category][-1].gpu_energy.values()])})
-
-            self.wandb_run.log(logs, step=timestamp)
-
-        # Queue update based on satisfaction rate.
-        self.Q = max(0.0, self.Q + self.algorithm_config["alpha"] - final_response)
-
-        return final_response, model_category, output
+        # if x_t == True:
+        #     logger.info(f"Exploring during step {timestamp}.")
+        #
+        #     outputs = self.__get_inference_model_labels(request=request)
+        #
+        #     # We only keep numerical values (log_likelihood score and whether the generated response was correct)
+        #     training_label = []
+        #
+        #     for model, data in outputs.items():
+        #         training_label.extend(data[0])
+        #         training_label.extend([float(i) for i in data[2]])
+        #
+        #     print(f"Captured output: {training_label}.")
+        #
+        #     # label = torch.tensor(label)
+        #     # model_category = [i for i in self.vllm_models.keys()][-1]
+        #     # final_response = output[0][-1]
+        #
+        #     # Train the classifier
+        #     # cp_measurement = self.__train_classifier_one_step(request=request, label=label.tolist(), timestep=timestamp)
+        #     # gpu_keys = [i for i in cp_measurement.gpu_energy.keys()]
+        #
+        #     # The last GPU is always used to train an inference run for the classifier model.
+        #     # logs = {"energy/train_classifier": cp_measurement.gpu_energy[gpu_keys[-1]]}
+        #     # logs.update({
+        #     #     f"preds/infer_{cat}": label[idx] for idx, cat in enumerate(model_categories)
+        #     # })
+        #     #
+        #     # for idx, cat in enumerate(self.vllm_models.keys()):
+        #     #     logs.update({f"energy/infer_{cat}": sum([v for v in self.measurements[cat][-1].gpu_energy.values()])})
+        #     #
+        #     # logs.update({f"time/infer_{cat}": self.measurements[cat][-1].time for idx, cat in enumerate(model_categories)})
+        #     # logs.update({
+        #     #     f"algorithm/infer_response_{model_category}": final_response
+        #     # })
+        #     #
+        #     # self.wandb_run.log(logs, step=timestamp)
+        #
+        # else:
+        #     logger.info(f"Estimating during step {timestamp}.")
+        #     logs = {}
+        #
+        #     preference_estimation, inference_model_label = self.estimate_user_preferences(
+        #         request=request,
+        #         timestamp=timestamp
+        #     )
+        #
+        #     logs.update({
+        #         f"algorithm/satisfaction_likelihood_{cat}": preference_estimation[idx] for idx, cat in enumerate(
+        #             self.vllm_models.keys()
+        #         )
+        #     })
+        #
+        #     preference_estimation = preference_estimation.reshape(-1, 1)
+        #     energy = []
+        #     for model_category in self.measurements.keys():
+        #         energy.append(
+        #             sum(map(lambda x: sum([i for i in x.gpu_energy.values()]) / len(self.measurements[model_category]), self.measurements[model_category]))
+        #         )
+        #
+        #     logs.update({f"algorithm/energy_estimate_{cat}": energy[idx] for idx, cat in enumerate(self.vllm_models.keys())})
+        #     energy = torch.tensor(energy).reshape(-1, 1)
+        #
+        #     # Energy and Preference Estimation are vectors.
+        #     cost_fn = self.algorithm_config["V"] * energy + self.Q * (self.algorithm_config["alpha"] - preference_estimation)
+        #     logs.update({f"algorithm/cost_fn_{cat}": cost_fn[idx].item() for idx, cat in enumerate(self.vllm_models.keys())})
+        #
+        #     choice_idx = torch.argmax(cost_fn)
+        #     choice_is_correct = 1 if torch.tensor(inference_model_label).reshape(-1, 1)[choice_idx].item() == 1 else 0
+        #     self.algorithm_correct_choices += choice_is_correct
+        #     logs.update({
+        #         f"algorithm/chosen_model": choice_idx,
+        #         f"algorithm/choice_correct": choice_is_correct,
+        #         f"algorithm/choice_accuracy": float(self.algorithm_correct_choices / timestamp),
+        #         f"algorithm/q_size": self.Q
+        #     })
+        #     model_category = model_categories[choice_idx]
+        #
+        #     # Query the model of choice
+        #     # This is what the output looks like: [(-1.7801642417907715, False)] (neg log-likelihood, Response)
+        #     output = self.query_model(
+        #         self.vllm_models[model_category],
+        #         request,
+        #         model_category
+        #     )
+        #
+        #     final_response = int(output[0][1])
+        #     logs.update({f"algorithm/infer_response_{model_category}": final_response})
+        #     logs.update({f"algorithm/infer_energy_{model_category}": sum([v for v in self.measurements[model_category][-1].gpu_energy.values()])})
+        #
+        #     self.wandb_run.log(logs, step=timestamp)
+        #
+        # # Queue update based on satisfaction rate.
+        # # self.Q = max(0.0, self.Q + self.algorithm_config["alpha"] - final_response)
+        #
+        # return True, True, True  # final_response, model_category, output
 
     def __sample_from_bernoulli(self, c: float, timestamp: int):
 
@@ -490,7 +542,8 @@ class MessPlusAutomaticModelSelector(object):
                     tensor_parallel_size=len(data["gpu_indices"]),
                     gpu_memory_utilization=data["gpu_memory_utilization"],
                     quantization=data["quantization"],
-                    seed=self.config["seed"]
+                    seed=self.config["seed"],
+                    enforce_eager=self.lm_eval_config["enforce_eager"]
                 )
             }
 
@@ -500,34 +553,26 @@ class MessPlusAutomaticModelSelector(object):
 
     def __warmup_classifier_model(self):
 
-        self.classifier_tokenizer = transformers.AutoTokenizer.from_pretrained(self.classifier_config["model_id"])
-        base_model = transformers.AutoModel.from_pretrained(self.classifier_config["model_id"])
-
         self.classifier_device = f"cuda:{self.classifier_config['gpu_index']}" if torch.cuda.is_available() else "cpu"
 
-        self.mess_classifier = MESSRouterNoLightning(
-            base_model=base_model,
-            model_list=[i for i in self.config["model_zoo"].keys()],
-            n_classes=len([i for i in self.config["model_zoo"].keys()]),
-            n_epochs=1,
-            hidden_layer_shape=self.classifier_config["hidden_layer_shape"],
+        self.mess_classifier = ContinualMultilabelBERTClassifier(
+            model_name=self.classifier_config["model_id"],
+            num_labels=len(self.vllm_models.keys()),
+            learning_rate=self.classifier_config["learning_rate"],
+            weight_decay=self.classifier_config["weight_decay"],
+            batch_size=self.classifier_config["batch_size"],
+            max_length=self.classifier_config["max_length"],
+            warmup_ratio=self.classifier_config["warmup_ratio"],
+            threshold=self.classifier_config["threshold"],
+            dropout_rate=self.classifier_config["dropout_rate"],
+            freeze_bert_layers=self.classifier_config["freeze_bert_layers"],
+            device=self.classifier_device
         )
 
-        self.mess_classifier = self.mess_classifier.to(self.classifier_device)
-
-        self.classifier_criterion = self.mess_classifier.configure_criterion(
-            weight=self.class_weights,
-            kind="bce",
-            gamma=self.classifier_config["gamma"] if "gamma" in self.classifier_config.keys() else None
+        logger.info(
+            f"Classification model {self.config['classifier_model']['model_id']} loaded and ready to use. "
+            f"Classifier model loaded onto device: {self.classifier_device}."
         )
-
-        self.classifier_optim = self.mess_classifier.get_optimizer(
-            optim_name=self.classifier_config["optimizer"],
-            model=self.mess_classifier,
-            lr=self.classifier_config["lr"],
-        )
-
-        logger.info(f"Classification model {self.config['classifier_model']['model_id']} loaded and ready to use.")
 
     def __evict_vllm_models(self):
 
@@ -546,61 +591,41 @@ class MessPlusAutomaticModelSelector(object):
             torch.distributed.destroy_process_group()
         torch.cuda.synchronize()
 
-    def __train_classifier_one_step(self, request: Instance, label: List[int], timestep: int):
+    def __train_classifier_one_step(
+        self,
+        request: Instance,
+        labels: dict[str, int],
+        timestep: int,
+        benchmark_name: str
+    ):
 
-        self.class_weights = self.class_weights.cpu()
-        if self.classifier_config["reweight_classes"] is True or self.classifier_config["use_focal_loss"] is True:
-            # When training with class-weighted losses, we add the new label to the label history and compute
-            # the class weights online. The same goes for Focal Loss.
-            self.label_history = pd.concat([self.label_history, pd.DataFrame({"label": str(label)}, index=[0])])
-            self.class_weights = self.mess_classifier.compute_class_weights(self.label_history)
+        relevant_data = {
+            "doc_id": request.doc_id,
+            "input_data": request.doc['question']
+        }
 
-        self.classifier_criterion = torch.nn.BCELoss()
+        # Add labels to data point.
+        relevant_data.update(labels)
 
-        # self.mess_classifier.configure_criterion(
-        #     weight=self.class_weights.to(self.classifier_device),
-        #     kind="bce",
-        #     gamma=self.classifier_config["gamma"] if "gamma" in self.classifier_config.keys() else None
-        # ))
-
-        dataset = ClassificationDataset(
-            x=[
-                request.doc["passage"] if "passage" in request.doc else request.doc["text"]
-            ],
-            y=[label],
-            tokenizer=self.classifier_tokenizer
+        pd_relevant_data = pd.DataFrame(relevant_data)
+        dataset = BertPandasDataset(
+            dataframe=pd_relevant_data.loc[timestep],
+            text_col="input_text",
+            y_cols=[i for i in labels.keys()],
+            tokenizer=self.mess_classifier.tokenizer,
+            max_length=self.classifier_config["max_length"]
         )
 
-        loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=1)
-
         self.energy_monitor.begin_window(f"classifier_training_step")
-        stepper = 0
-        step_loss = 0.0
-        for epoch in range(self.classifier_config["epochs"]):
-
-            for i, batch in enumerate(loader):
-                input_ids = batch['input_ids'].to(self.classifier_device)
-                attention_mask = batch['attention_mask'].to(self.classifier_device)
-                labels = batch['label'].to(self.classifier_device)
-
-                self.classifier_optim.zero_grad()
-                outputs = self.mess_classifier(input_ids, attention_mask)
-
-                loss = self.classifier_criterion(outputs, labels.float())
-                loss.backward()
-                self.classifier_optim.step()
-
-                step_loss += loss.item()
-                stepper += 1
-                self.classifier_running_train_loss += loss.item()
-                self.classifier_train_steps += 1
-
+        self.mess_classifier.incremental_fit(
+            new_train_dataset=dataset,
+            # We are validating on the online sample at time t to capture the outcome quality.
+            new_val_dataset=dataset,
+            timestamp=timestep
+        )
         measurement = self.energy_monitor.end_window(f"classifier_training_step")
-
         self.wandb_run.log({
-            "classifier/train_step_loss": float(step_loss / stepper),
-            "classifier/train_running_loss": float(self.classifier_running_train_loss / self.classifier_train_steps),
-            "classifier/train_step_energy": sum([v for v in measurement.gpu_energy.values()])
+            "train/step_energy": sum([v for v in measurement.gpu_energy.values()])
         }, step=timestep)
 
         return measurement
@@ -653,8 +678,8 @@ class MessPlusAutomaticModelSelector(object):
 
         return adjusted_task_dict
 
-    def __get_inference_model_labels(self, request) -> Tuple[List, Dict[str, List[Tuple[float, bool, int]]]]:
-        outputs = {i: [] for i in self.vllm_models.keys()}
+    def __get_inference_model_labels(self, request) -> dict[Any, tuple[Any]]:
+        outputs = {i: tuple() for i in self.vllm_models.keys()}
         for model_category, model in self.vllm_models.items():
             outputs[model_category] = self.query_model(
                 model,
@@ -662,12 +687,9 @@ class MessPlusAutomaticModelSelector(object):
                 model_category
             )
 
-        # the final response
-        label = []
-        for model_category, data in outputs.items():
-            label.append(sum(map(lambda x: x[-1], data)))
+        logger.debug(f"Model outputs: {outputs}.")
 
-        return label, outputs
+        return outputs
 
     @staticmethod
     def validate_tasks(lm, eval_tasks, confirm_run_unsafe_code: bool = True):
