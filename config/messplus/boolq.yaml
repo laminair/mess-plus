@@ -8,13 +8,13 @@ model_zoo:
     category: "medium"
     gpu_indices: [0]
     max_seq_len: 2048
-    gpu_memory_utilization: 0.70
+    gpu_memory_utilization: 0.35
     quantization: "bitsandbytes"
   meta-llama/Llama-3.2-1B-Instruct:
     category: "small"
     gpu_indices: [0]
     max_seq_len: 2048
-    gpu_memory_utilization: 0.28
+    gpu_memory_utilization: 0.3
     quantization: null
 #  meta-llama/Llama-3.3-70B-Instruct:
 #    category: "large"
@@ -24,7 +24,7 @@ model_zoo:
 classifier_model:
   model_id: "answerdotai/ModernBERT-base"
   epochs: 1
-  learning_rate: 2e-5
+  learning_rate: 0.00002
   weight_decay: 0.01
   batch_size: 16  # This only has an effect when memory dataset is activated
   max_length: 128
@@ -37,6 +37,7 @@ classifier_model:
   reset_optimizer: false
   regularization_lambda: 0.0
   gpu_index: 0
+  disable_tqdm: true
 
 algorithm:
   alpha: 0.8
@@ -46,6 +47,8 @@ algorithm:
 lm_eval:
   # The run name will be the first benchmark in the list below.
   benchmarks: ["boolq"]
-  limit_num_samples: 2
-  enforce_eager: false
+  num_repeats: 1
+  limit_num_samples: 100
+  # TODO: Make sure we disable eager mode for the actual experiments to be as energy efficient as possible.
+  enforce_eager: true
   write_to_disk: false

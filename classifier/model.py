@@ -1,3 +1,4 @@
+import pandas as pd
 import torch
 import numpy as np
 import os
@@ -106,7 +107,8 @@ class MultilabelBERTClassifier:
             threshold=0.5,
             dropout_rate=0.1,
             freeze_bert_layers=False,
-            device=None
+            device=None,
+            config: dict = None,
     ):
         self.model_name = model_name
         self.num_labels = num_labels
@@ -125,6 +127,9 @@ class MultilabelBERTClassifier:
 
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+
+        # Config for MESS+
+        self.config = config
 
     def fit(self, train_dataset, val_dataset, epochs=5, early_stopping_patience=3):
         """Train the model with early stopping based on validation performance."""
@@ -157,7 +162,7 @@ class MultilabelBERTClassifier:
             classifier_params = {'params': self.model.classifier.parameters(), 'lr': self.learning_rate * 10}
             parameters = [bert_params, classifier_params]
 
-        optimizer = optim.AdamW(
+        optimizer = optim.SGD(
             parameters,
             lr=self.learning_rate,
             weight_decay=self.weight_decay
@@ -192,7 +197,8 @@ class MultilabelBERTClassifier:
                 train_loader,
                 desc=f"Epoch {epoch + 1}/{epochs} [Training]",
                 leave=True,
-                position=0
+                position=0,
+                disable=self.config["disable_tqdm"]
             )
 
             # Initialize running statistics
@@ -259,7 +265,9 @@ class MultilabelBERTClassifier:
                 val_loader,
                 desc=f"Epoch {epoch + 1}/{epochs} [Validation]",
                 leave=True,
-                position=0
+                position=0,
+                disable=self.config["disable_tqdm"]
+
             )
 
             with torch.no_grad():
@@ -371,7 +379,7 @@ class MultilabelBERTClassifier:
         all_labels = []
 
         with torch.no_grad():
-            for batch in tqdm(data_loader, desc="Evaluating"):
+            for batch in tqdm(data_loader, desc="Evaluating", disable=self.config["disable_tqdm"]):
                 # Move batch to device
                 batch = {k: v.to(self.device) for k, v in batch.items()}
 
@@ -543,11 +551,13 @@ class ContinualMultilabelBERTClassifier(MultilabelBERTClassifier):
 
         # Track training history across all increments
         self.training_history = {
-            'train/avg_loss': [],
-            'val/loss': [],
-            'val/f1': [],
-            'val/precision': [],
-            'val/recall': []
+            "train/avg_loss": [],
+            "train/avg_accuracy": [],
+            "train/step_accuracy": [],
+            "val/loss": [],
+            "val/f1": [],
+            "val/precision": [],
+            "val/recall": []
         }
 
         # Track data seen so far
@@ -616,12 +626,12 @@ class ContinualMultilabelBERTClassifier(MultilabelBERTClassifier):
     def incremental_fit(
             self,
             new_train_dataset,
-            new_val_dataset,
-            epochs=3,
-            memory_strategy='random',
-            learning_rate=None,
-            reset_optimizer=False,
-            regularization_lambda=0.0,
+            new_val_dataset: pd.DataFrame = None,
+            epochs: int = 1,
+            memory_strategy: str = "random",
+            learning_rate: float = None,
+            reset_optimizer: bool = False,
+            regularization_lambda: float = 0.0,
             timestamp: int = 0,
     ):
         """
@@ -635,6 +645,7 @@ class ContinualMultilabelBERTClassifier(MultilabelBERTClassifier):
             learning_rate: Optional learning rate override
             reset_optimizer: Whether to reset the optimizer
             regularization_lambda: Strength of regularization to previous model
+            timestamp: Timestamp of request
         """
         # Load the model if not already done
         self.make_model_if_not_exists(train_dataset=new_train_dataset)
@@ -671,19 +682,21 @@ class ContinualMultilabelBERTClassifier(MultilabelBERTClassifier):
             collate_fn=self.collate_fn
         )
 
-        val_loader = DataLoader(
-            new_val_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            collate_fn=self.collate_fn
-        )
+        if new_val_dataset is not None:
+
+            val_loader = DataLoader(
+                new_val_dataset,
+                batch_size=self.batch_size,
+                shuffle=False,
+                collate_fn=self.collate_fn
+            )
 
         # Setup optimizer and scheduler
         if learning_rate:
             self.learning_rate = learning_rate
 
         if reset_optimizer or not hasattr(self, 'optimizer'):
-            self.optimizer = optim.AdamW(
+            self.optimizer = optim.SGD(
                 self.model.parameters(),
                 lr=self.learning_rate,
                 weight_decay=self.weight_decay
@@ -715,7 +728,11 @@ class ContinualMultilabelBERTClassifier(MultilabelBERTClassifier):
 
             all_labels = []
             all_preds = []
-            for batch in tqdm(train_loader, desc=f"Epoch {epoch + 1}/{epochs} [Training]"):
+            for batch in tqdm(
+                train_loader,
+                desc=f"Epoch {epoch + 1}/{epochs} [Training]",
+                disable=self.config["disable_tqdm"]
+            ):
                 # Move batch to device
                 batch = {k: v.to(self.device) for k, v in batch.items()}
 
@@ -755,7 +772,7 @@ class ContinualMultilabelBERTClassifier(MultilabelBERTClassifier):
                 train_steps += 1
 
                 # Convert logits to predictions
-                preds = torch.sigmoid(logits).cpu().numpy()
+                preds = torch.sigmoid(logits).detach().cpu().numpy()
                 labels = batch['labels'].cpu().numpy()
 
                 # Apply threshold
@@ -768,35 +785,44 @@ class ContinualMultilabelBERTClassifier(MultilabelBERTClassifier):
                 all_preds = np.vstack(all_preds)
                 all_labels = np.vstack(all_labels)
 
+                acc_score = accuracy_score(all_labels.flatten(), all_preds.flatten())
+                self.training_history["train/avg_accuracy"].append(acc_score)
+
                 if wandb.run is not None:
                     wandb.log({
                         "train/step_loss": loss.item(),
-                        "train/accuracy": accuracy_score(all_labels.flatten(), all_preds.flatten())
-                    })
+                        "train/step_accuracy": acc_score,
+                        "train/avg_accuracy": sum(self.training_history["train/avg_accuracy"]) / timestamp if timestamp > 0 else 0
+                    }, step=timestamp)
 
             avg_train_loss = train_loss / train_steps
 
             # Validation
-            val_metrics = self.evaluate(val_loader)
-            val_loss = val_metrics['val/loss']
-            val_f1 = val_metrics['val/f1_micro']
+            if new_val_dataset is not None:
+                val_metrics = self.evaluate(val_loader)
+                val_loss = val_metrics['val/loss']
+                val_f1 = val_metrics['val/f1_micro']
 
             # Print epoch summary
             epoch_time = time.time() - start_time
             logger.info(f"Epoch {epoch + 1}/{epochs} - Time: {epoch_time:.2f}s")
-            logger.info(f"  Train Loss: {avg_train_loss:.4f}")
-            logger.info(f"  Val Loss: {val_loss:.4f}, Val F1: {val_f1:.4f}")
-            logger.info(f"  Precision: {val_metrics['val/precision']:.4f}, Recall: {val_metrics['val/recall']:.4f}")
+
+            if new_val_dataset is not None:
+                logger.info(f"  Train Loss: {avg_train_loss:.4f}")
+                logger.info(f"  Val Loss: {val_loss:.4f}, Val F1: {val_f1:.4f}")
+                logger.info(f"  Precision: {val_metrics['val/precision']:.4f}, Recall: {val_metrics['val/recall']:.4f}")
 
             # Update training history
             self.training_history['train/avg_loss'].append(avg_train_loss)
-            self.training_history['val/loss'].append(val_loss)
-            self.training_history['val/f1'].append(val_f1)
-            self.training_history['val/precision'].append(val_metrics['val/precision'])
-            self.training_history['val/recall'].append(val_metrics['val/recall'])
+
+            if new_val_dataset is not None:
+                self.training_history['val/loss'].append(val_loss)
+                self.training_history['val/f1'].append(val_f1)
+                self.training_history['val/precision'].append(val_metrics['val/precision'])
+                self.training_history['val/recall'].append(val_metrics['val/recall'])
 
             # Save model if it's the best so far
-            if val_f1 > best_val_f1:
+            if new_val_dataset is not None and val_f1 > best_val_f1:
                 best_val_f1 = val_f1
                 # Save the best model
                 # self.save_model(f"{FILE_FOLDER_PATH}/checkpoints/best_model_increment_{self.data_seen}.pt")
@@ -808,10 +834,13 @@ class ContinualMultilabelBERTClassifier(MultilabelBERTClassifier):
         # Update data seen counter
         self.data_seen += len(new_train_dataset)
 
-        if wandb.run is not None:
+        if new_val_dataset is not None and wandb.run is not None:
             wandb.log(val_metrics, step=timestamp)
 
-        return val_metrics
+        if new_val_dataset is not None:
+            return val_metrics
+        else:
+            return None
 
     def save_checkpoint(self, path):
         """
@@ -871,7 +900,7 @@ class ContinualMultilabelBERTClassifier(MultilabelBERTClassifier):
 
         # Load optimizer if available
         if checkpoint['optimizer_state_dict']:
-            self.optimizer = optim.AdamW(
+            self.optimizer = optim.SGD(
                 self.model.parameters(),
                 lr=self.learning_rate,
                 weight_decay=self.weight_decay

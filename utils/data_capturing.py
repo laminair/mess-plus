@@ -1,6 +1,8 @@
 import pandas as pd
 import os
+
 from datetime import datetime
+from lm_eval.api.task import Instance
 
 from typing import Dict
 
@@ -30,6 +32,7 @@ class StreamingDataProcessor:
         benchmark_name: str = None,
         doc_id: str = None,
         write_to_disk: bool = True,
+        write_to_history: bool = True
     ):
         """
         Process a single row of dictionary data.
@@ -42,6 +45,7 @@ class StreamingDataProcessor:
             benchmark_name (str, optional): The benchmark name for this row
             doc_id (str, optional): The document ID for this row
             write_to_disk (bool, optional): Whether to write samples to disk
+            write_to_history (bool, optional): Whether to concatenate new rows to previous rows and return the entire df
         """
         # Create a flattened dictionary for this row
         flat_dict = {}
@@ -52,31 +56,28 @@ class StreamingDataProcessor:
         flat_dict["doc_id"] = doc_id
 
         # For each key in the dictionary
-        for key, values in row_dict.items():
-            # Extract values (assuming each inner list has exactly one element)
-            numeric_val = values[0][0] if len(values[0]) > 0 else None
-            string_val = values[1][0] if len(values[1]) > 0 else None
-            bool_val = values[2][0] if len(values[2]) > 0 else None
-
-            # Add to flattened dictionary with descriptive column names
-            flat_dict[f"{key}_numeric"] = numeric_val
-            flat_dict[f"{key}_string"] = string_val
-            flat_dict[f"{key}_bool"] = bool_val
+        for model_category, values in row_dict.items():
+            for k, v in values.items():
+                flat_dict[f"{model_category}_{k}"] = v[0] if type(v) is list else v
 
         # Convert the flattened dictionary to a DataFrame row and append
         row_df = pd.DataFrame([flat_dict])
 
         # Append to the main DataFrame
-        self.df = pd.concat([self.df, row_df], ignore_index=True)
+        if write_to_history:
+            self.df = pd.concat([self.df, row_df], ignore_index=True)
 
-        # Increment row counter
-        self.row_count += 1
+            # Increment row counter
+            self.row_count += 1
 
-        # Save if we've reached the save frequency
-        if self.row_count % self.save_frequency == 0 and write_to_disk:
-            self.save_to_disk(benchmark_name=benchmark_name)
+            # Save if we've reached the save frequency
+            if self.row_count % self.save_frequency == 0 and write_to_disk:
+                self.save_to_disk(benchmark_name=benchmark_name)
 
-        return self.row_count
+            return self.row_count
+
+        else:
+            return row_df
 
     def save_to_disk(self, final=False, benchmark_name: str = None):
         """
@@ -175,3 +176,64 @@ class DataExtractor:
         }
 
         return relevant_data
+
+
+class SampleGenerator:
+    def make_boolq_sample(self, request: Instance, label_dict: dict):
+        """
+        Creates a pandas DataFrame for BoolQ format based on the provided input text and label dictionary.
+        BoolQ asks the same question twice with different paragraphs and background information. One variant is true,
+        the other one is false. When creating the "input_text" for our classifier, we need to concatenate the question
+        and the ground_truth response. Otherwise, we will confuse the model.
+
+        Args:
+            request (Instance): The input request object provided by LM-Eval
+            label_dict (dict): Dictionary with keys as label names and values as tuples of (log prob, label, correct)
+
+        Returns:
+            pd.DataFrame: DataFrame with columns for id, input_text, and a label column for each key in label_dict
+        """
+
+        # Create a dictionary to hold our data
+        data = {
+            "doc_id": request.doc_id,
+            # This is the question plus the expected model output ("yes"/"no").
+            "input_text": f"{request.doc['question']} -{request.arguments[1]}"
+        }
+
+        def get_value(val):
+            if type(val) is list:
+                out = get_value(val[0])
+            elif type(val) is bool:
+                out = int(val)
+            else:
+                out = val
+
+            return out
+
+        # Add a column for each label in the label_dict
+        for model_category, model_outputs in label_dict.items():
+            for name, value in model_outputs.items():
+                data[f"{name}_{model_category}"] = get_value(value)
+
+        # Create and return the DataFrame
+        return pd.DataFrame([data])
+
+    def make_sample(self, request: Instance, label_dict, benchmark_name):
+        """
+        Routes the input to the appropriate sample creation function based on benchmark_name.
+
+        Args:
+            input_text (str): The input text to include in the sample
+            label_dict (dict): Dictionary with keys as label names and values as tuples
+            benchmark_name (str): Name of the benchmark to determine routing
+
+        Returns:
+            pd.DataFrame: Properly formatted DataFrame based on the benchmark
+        """
+        if benchmark_name.lower() == "boolq":
+            return self.make_boolq_sample(request, label_dict)
+        else:
+            # Default format or handle other benchmark types
+            # For now, using the same format as BoolQ
+            raise NotImplementedError(f"Sample creator for benchmark {benchmark_name} not implemented.")
