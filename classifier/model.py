@@ -219,7 +219,6 @@ class MultilabelBERTClassifier:
                 )
 
                 logits = outputs["logits"]
-                # print(logits)
                 loss = criterion(logits, batch['labels'])
 
                 # # Backward pass and optimize
@@ -438,16 +437,16 @@ class MultilabelBERTClassifier:
 
         # Make predictions
         with torch.no_grad():
-            outputs = self.model(**inputs)
+            outputs = self.model.forward(**inputs)
             logits = outputs["logits"]
             probs = torch.sigmoid(logits).cpu().numpy()
             predictions = (probs >= self.threshold).astype(int)
 
         return predictions, probs
 
-    def make_model_if_not_exists(self, train_dataset):
+    def make_model_if_not_exists(self, train_dataset=None):
         if not hasattr(self, 'model'):
-            if self.num_labels is None:
+            if self.num_labels is None and train_dataset is not None:
                 # Infer from the dataset
                 sample = train_dataset[0]
                 if isinstance(sample, dict) and 'labels' in sample:
@@ -493,14 +492,10 @@ class MultilabelBERTClassifier:
 
         # Load the model if not already initialized
         if not hasattr(self, 'model'):
-            self.model = AutoModel.from_pretrained(
-                self.model_name,
-                num_labels=self.num_labels,
-                problem_type="multi_label_classification"
-            )
+            self.make_model_if_not_exists()
 
         # Load state dict
-        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
         self.model.to(self.device)
 
         # Load tokenizer if saved

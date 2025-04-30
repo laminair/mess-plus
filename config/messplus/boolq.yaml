@@ -1,21 +1,21 @@
 run_name: "baseline"
-seed: 42
+seed: 43
 
 # You need to load the models in inverse order as the CUDA graph generation takes extra space that goes beyond the
 # memory utilization limit...
 model_zoo:
-  unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit:
-    category: "medium"
-    gpu_indices: [0]
-    max_seq_len: 2048
-    gpu_memory_utilization: 0.35
-    quantization: "bitsandbytes"
   meta-llama/Llama-3.2-1B-Instruct:
     category: "small"
     gpu_indices: [0]
     max_seq_len: 2048
     gpu_memory_utilization: 0.3
     quantization: null
+  unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit:
+    category: "medium"
+    gpu_indices: [0]
+    max_seq_len: 2048
+    gpu_memory_utilization: 0.35
+    quantization: "bitsandbytes"
 #  meta-llama/Llama-3.3-70B-Instruct:
 #    category: "large"
 #    gpu_indices: [0]
@@ -38,17 +38,20 @@ classifier_model:
   regularization_lambda: 0.0
   gpu_index: 0
   disable_tqdm: true
+  checkpoint_path: "classifier/checkpoints/mess_classifier_best_ckpt.pt"  # Path starts from the project root path.
+  use_pretrained_classifier: true
+  scoring_method: raw
 
 algorithm:
-  alpha: 0.8
-  c: 1
-  V: 100
+  alpha: 0.7
+  c: 0.01
+  V: 1
 
 lm_eval:
   # The run name will be the first benchmark in the list below.
   benchmarks: ["boolq"]
   num_repeats: 1
-  limit_num_samples: 100
+  limit_num_samples: null
   # TODO: Make sure we disable eager mode for the actual experiments to be as energy efficient as possible.
   enforce_eager: true
   write_to_disk: false

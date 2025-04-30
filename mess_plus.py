@@ -13,6 +13,7 @@ import wandb
 import yaml
 
 from numpy.random import binomial
+from pathlib import Path
 from torch.utils.data import DataLoader
 from torch.nn import functional as F
 from vllm.distributed.parallel_state import destroy_model_parallel, destroy_distributed_environment
@@ -35,14 +36,16 @@ from utils.data_capturing import StreamingDataProcessor, DataExtractor, SampleGe
 from utils.mess_lm_eval_harness.vllm_v2 import MessLMEvalVLLM
 from classifier.model import ContinualMultilabelBERTClassifier
 from classifier.dataset import BertPandasDataset
+from classifier.score_estimation import RoutingScoreEstimator
 
 from zeus.monitor import ZeusMonitor
 
 from collections import defaultdict
 from typing import List, Optional, Tuple, Dict, Any
 
+logger = logging.getLogger(__name__)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
         logging.FileHandler(f'mess_plus.log'),
@@ -50,8 +53,8 @@ logging.basicConfig(
     ]
 )
 
-logger = logging.getLogger(__name__)
 NUM_GPUS = torch.cuda.device_count()
+PROJECT_ROOT_PATH = Path(__file__).parent.resolve()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 torch.set_float32_matmul_precision('high')
@@ -83,16 +86,16 @@ class MessPlusAutomaticModelSelector(object):
         # Change "True" to "False" in file venv/lib/python3.12/site-packages/zeus/device/cpu/rapl.py (l. 137)
         self.wandb_run = None
 
-        self.measurements \
-            = self.nll_scores \
-            = self.greedy_output \
-            = self.predictions \
-            = self.ground_truths \
-            = self.labels \
-            = {data["category"]: [] for data in self.config["model_zoo"].values()}
+        self.measurements = {data["category"]: [] for data in self.config["model_zoo"].values()}
+        self.nll_scores = {data["category"]: [] for data in self.config["model_zoo"].values()}
+        self.greedy_output = {data["category"]: [] for data in self.config["model_zoo"].values()}
+        self.predictions = {data["category"]: [] for data in self.config["model_zoo"].values()}
+        self.ground_truths = {data["category"]: [] for data in self.config["model_zoo"].values()}
+        self.labels = {data["category"]: [] for data in self.config["model_zoo"].values()}
 
         self.energy_monitor = ZeusMonitor(gpu_indices=[i for i in range(NUM_GPUS)], approx_instant_energy=True)
         self.num_exploration_steps = []
+        self.large_model_chosen_ratio = []
         self.classifier_running_train_loss = 0.0
         self.classifier_train_steps = 0
         self.classifier_running_val_loss = 0.0
@@ -102,6 +105,9 @@ class MessPlusAutomaticModelSelector(object):
         # Algorithm config
         # Q is a virtual queue, i.e., we only keep the sum of all violations, no history.
         self.Q = 0.0
+
+        # Classifier Score Estimation Function
+        self.scoring_engine = RoutingScoreEstimator()
 
         # LM Eval Config
         task_manager = TaskManager(verbosity="INFO")
@@ -137,7 +143,6 @@ class MessPlusAutomaticModelSelector(object):
         self.reference_data_reader = DataExtractor()
         self.sample_generator = SampleGenerator()
 
-
     def launch(
         self,
         apply_chat_template: bool = False,
@@ -165,6 +170,7 @@ class MessPlusAutomaticModelSelector(object):
 
         logger.info(f"Running the following eval tasks: {self.eval_tasks}")
         results, samples, configs, versions, num_fewshot, higher_is_better, = consolidate_results(self.eval_tasks)
+        print(results)
 
         ### Calculate group metrics ###
         show_group_table = False
@@ -289,25 +295,25 @@ class MessPlusAutomaticModelSelector(object):
                 # We initialize one classifier model for every benchmark
                 self.__warmup_classifier_model()
                 for jdx, request in enumerate(cloned_reqs):
-                    logger.info(f"Running request #{jdx}...")
-                    outputs = self.run_request(request, task, timestamp=jdx)
-                    reference_data = self.reference_data_reader.get_data(
-                        benchmark_name=task.task_name,
-                        request=request
-                    )
+                    # logger.info(f"Running request #{jdx}...")
+                    results = self.run_request(request, task, timestamp=jdx)
+                    # reference_data = self.reference_data_reader.get_data(
+                    #     benchmark_name=task.task_name,
+                    #     request=request
+                    # )
 
-                    self.infer_data_processor.process_row(
-                        outputs,
-                        input_text=reference_data["input_data"],
-                        ground_truth=reference_data["ground_truth"],
-                        doc_id=reference_data["doc_id"],
-                        benchmark_name=task.task_name,
-                        write_to_disk=self.lm_eval_config["write_to_disk"]
-                    )
+                    # self.infer_data_processor.process_row(
+                    #     outputs,
+                    #     input_text=reference_data["input_data"],
+                    #     ground_truth=reference_data["ground_truth"],
+                    #     doc_id=reference_data["doc_id"],
+                    #     benchmark_name=task.task_name,
+                    #     write_to_disk=self.lm_eval_config["write_to_disk"]
+                    # )
 
-                    for output in outputs:
+                    for result in results:
                         request.resps.append(
-                            (output[0], output[1])
+                            (result[0], result[1])
                         )
 
         ### Postprocess outputs ###
@@ -371,7 +377,7 @@ class MessPlusAutomaticModelSelector(object):
         # aggregate results ; run bootstrap CIs
         task_output.calculate_aggregate_metric(bootstrap_iters=bootstrap_iters)
 
-        self.infer_data_processor.finalize(write_to_disk=self.lm_eval_config["write_to_disk"])
+        # self.infer_data_processor.finalize(write_to_disk=self.lm_eval_config["write_to_disk"])
         self.__evict_vllm_models()
 
         return None
@@ -430,18 +436,15 @@ class MessPlusAutomaticModelSelector(object):
         model_categories = [i for i in self.vllm_models.keys()]
         x_t = self.__sample_from_bernoulli(c=self.algorithm_config["c"], timestamp=timestamp)
 
-
         if x_t == 1:
-            logger.info(f"Exploring during step {timestamp}.")
+            logger.info(f"Running request #{timestamp} - Training")
             outputs = self.__get_training_sample(request=request, task=task)
 
-            training_sample = self.__train_classifier_one_step(
-                training_sample=outputs,
-                timestamp=timestamp,
-                label_col_identifier="labels_"
-            )
-
-            logger.debug(f"Training sample after exploratory classifier training: \n {training_sample}")
+            # outputs = self.__train_classifier_one_step(
+            #     training_sample=outputs,
+            #     timestamp=timestamp,
+            #     label_col_identifier="labels_"
+            # )
 
             # We return the output of the largest model (as we assume the larger the model, the more capable).
             chosen_model = "large"
@@ -453,86 +456,90 @@ class MessPlusAutomaticModelSelector(object):
                 chosen_model = "small"
 
             # This is the format needed by LM-Eval to generate final scores.
-            output = (
-                training_sample.iloc[0][f"nll_scores_{chosen_model}"],
-                bool(training_sample.iloc[0][f"greedy_output_{chosen_model}"]),
-                training_sample.iloc[0][f"responses_{chosen_model}"]
+            result = (
+                outputs.iloc[0][f"nll_scores_{chosen_model}"],
+                bool(outputs.iloc[0][f"greedy_output_{chosen_model}"]),
+                outputs.iloc[0][f"responses_{chosen_model}"]
+            )
+
+            chosen_model_id = len(self.vllm_models.keys()) - 1
+            response_is_correct = bool(outputs.iloc[0][f"labels_{chosen_model}"].item())
+            logger.info(
+                f"Model choice -ID: {chosen_model_id} - "
+                f"Response correct: {response_is_correct}"
             )
 
         else:
 
-            # TODO: Create exploitation logic.
+            logger.info(f"Running request #{timestamp} - Estimating")
 
-            logger.info(f"Estimating during step {timestamp}.")
+            # We treat the normalized probabilities as proxy for user satisfaction scores, i.e., the likelihood whether
+            # a model will satisfy a user request.
+            classifier_preds, logits = self.estimate_user_preferences(
+                request=request,
+                timestamp=timestamp
+            )
 
+            energy = []
+            for model_category in self.measurements.keys():
+                energy.append(
+                    sum(map(lambda x: sum([i for i in x.gpu_energy.values()]) / len(self.measurements[model_category]),
+                            self.measurements[model_category]))
+                )
 
+            # logs.update({f"algorithm/energy_estimate_{cat}": energy[idx] for idx, cat in enumerate(self.vllm_models.keys())})
+            energy = np.array(energy).reshape(-1, 1)
+            classification_scores = self.scoring_engine.get_scores(
+                logits=logits,
+                scoring_method=self.classifier_config["scoring_method"],
+            )
+            classification_scores = classification_scores.reshape(-1, 1)
+            cost_fn = self.algorithm_config["V"] * energy + self.Q * (
+                    self.algorithm_config["alpha"] - classification_scores
+            )
+
+            cost_fn = cost_fn.reshape(1, -1)
+            chosen_model_id = np.argmin(cost_fn)
+            model_to_choose = model_categories[chosen_model_id]
+
+            response = self.query_model(
+                model=self.vllm_models[model_to_choose],
+                request=request,
+                model_category=model_to_choose
+            )
+
+            # This is the format needed by LM-Eval to generate final scores.
+            result = (
+                response[f"nll_scores"][0],
+                bool(response[f"greedy_output"]),
+                response[f"responses"][0]
+            )
+
+            response_is_correct = response["labels"][0]
+            logger.info(
+                f"Cost-function values: {cost_fn} - "
+                f"Model choice -ID: {chosen_model_id} - "
+                f"NAME: {model_to_choose} - "
+                f"Response correct: {response_is_correct}"
+            )
+
+        self.Q = max(0.0, self.Q + self.algorithm_config["alpha"] - response_is_correct)
         self.num_exploration_steps.append(x_t)
+        self.large_model_chosen_ratio.append(chosen_model_id)
 
         if wandb.run is not None:
             wandb.log({
-                "exploration_ratio": sum(self.num_exploration_steps) / (timestamp + 1)
+                "exploration_ratio": sum(self.num_exploration_steps) / (timestamp + 1),
+                "mess/q_size": self.Q,
+                "mess/chosen_model_id": chosen_model_id,
+                "mess/response_correct": response_is_correct,
+                "mess/large_model_chosen_ratio": sum(self.large_model_chosen_ratio) / (timestamp + 1)
             })
 
-        return outputs
+        if type(result) is not list:
+            result = [result]
 
-        # else:
-        #     logger.info(f"Estimating during step {timestamp}.")
-        #     logs = {}
-        #
-        #     preference_estimation, inference_model_label = self.estimate_user_preferences(
-        #         request=request,
-        #         timestamp=timestamp
-        #     )
-        #
-        #     logs.update({
-        #         f"algorithm/satisfaction_likelihood_{cat}": preference_estimation[idx] for idx, cat in enumerate(
-        #             self.vllm_models.keys()
-        #         )
-        #     })
-        #
-        #     preference_estimation = preference_estimation.reshape(-1, 1)
-        #     energy = []
-        #     for model_category in self.measurements.keys():
-        #         energy.append(
-        #             sum(map(lambda x: sum([i for i in x.gpu_energy.values()]) / len(self.measurements[model_category]), self.measurements[model_category]))
-        #         )
-        #
-        #     logs.update({f"algorithm/energy_estimate_{cat}": energy[idx] for idx, cat in enumerate(self.vllm_models.keys())})
-        #     energy = torch.tensor(energy).reshape(-1, 1)
-        #
-        #     # Energy and Preference Estimation are vectors.
-        #     cost_fn = self.algorithm_config["V"] * energy + self.Q * (self.algorithm_config["alpha"] - preference_estimation)
-        #     logs.update({f"algorithm/cost_fn_{cat}": cost_fn[idx].item() for idx, cat in enumerate(self.vllm_models.keys())})
-        #
-        #     choice_idx = torch.argmax(cost_fn)
-        #     choice_is_correct = 1 if torch.tensor(inference_model_label).reshape(-1, 1)[choice_idx].item() == 1 else 0
-        #     self.algorithm_correct_choices += choice_is_correct
-        #     logs.update({
-        #         f"algorithm/chosen_model": choice_idx,
-        #         f"algorithm/choice_correct": choice_is_correct,
-        #         f"algorithm/choice_accuracy": float(self.algorithm_correct_choices / timestamp),
-        #         f"algorithm/q_size": self.Q
-        #     })
-        #     model_category = model_categories[choice_idx]
-        #
-        #     # Query the model of choice
-        #     # This is what the output looks like: [(-1.7801642417907715, False)] (neg log-likelihood, Response)
-        #     output = self.query_model(
-        #         self.vllm_models[model_category],
-        #         request,
-        #         model_category
-        #     )
-        #
-        #     final_response = int(output[0][1])
-        #     logs.update({f"algorithm/infer_response_{model_category}": final_response})
-        #     logs.update({f"algorithm/infer_energy_{model_category}": sum([v for v in self.measurements[model_category][-1].gpu_energy.values()])})
-        #
-        #     self.wandb_run.log(logs, step=timestamp)
-        #
-        # # Queue update based on satisfaction rate.
-        # # self.Q = max(0.0, self.Q + self.algorithm_config["alpha"] - final_response)
-        #
-        # return True, True, True  # final_response, model_category, output
+        return result
 
     def __sample_from_bernoulli(self, c: float, timestamp: int):
 
@@ -602,6 +609,13 @@ class MessPlusAutomaticModelSelector(object):
             f"Classification model {self.config['classifier_model']['model_id']} loaded and ready to use. "
             f"Classifier model loaded onto device: {self.classifier_device}."
         )
+
+        if self.classifier_config["use_pretrained_classifier"] is True:
+            self.mess_classifier.load_model(path=f"{PROJECT_ROOT_PATH}/{self.classifier_config['checkpoint_path']}")
+            logger.info(
+                f"Using pre-trained classifier available under path "
+                f"{PROJECT_ROOT_PATH}/{self.classifier_config['checkpoint_path']}"
+            )
 
     def __evict_vllm_models(self):
 
@@ -722,7 +736,7 @@ class MessPlusAutomaticModelSelector(object):
             benchmark_name=task.task_name
         )
 
-        logger.debug(f"Model outputs: {outputs}.")
+        # logger.debug(f"Model outputs: {outputs}.")
 
         return training_sample
 
@@ -752,49 +766,19 @@ class MessPlusAutomaticModelSelector(object):
                 )
 
     def estimate_user_preferences(self, request: Instance, timestamp: int):
-        # We need the true labels to estimate the predictor quality.
-        label, _ = self.__get_inference_model_labels(request=request)
 
-        dataset = ClassificationDataset(
-            x=[request.doc["passage"] if "passage" in request.doc else request.doc["text"]],
-            y=[label],
-            tokenizer=self.classifier_tokenizer
-        )
-
-        loader = DataLoader(dataset, batch_size=1, shuffle=False, num_workers=1)
+        relevant_data = self.reference_data_reader.get_data(request=request, benchmark_name=request.metadata[0])
+        input_text = relevant_data["input_data"]
 
         self.energy_monitor.begin_window(f"classifier_prediction_step")
-        stepper = 0
-        step_loss = 0.0
-
-        preference = None
-        for i, batch in enumerate(loader):
-            input_ids = batch['input_ids'].to(self.classifier_device)
-            attention_mask = batch['attention_mask'].to(self.classifier_device)
-            labels = batch['label'].to(self.classifier_device)
-
-            with torch.no_grad():
-                outputs = self.mess_classifier(input_ids, attention_mask)
-                loss = self.classifier_criterion(outputs, labels.float())
-
-            step_loss += loss.item()
-            stepper += 1
-            self.classifier_running_val_loss += loss.item()
-            self.classifier_val_steps += 1
-
-            # We normalize the tensor to 1.0 such that we get the preference scores.
-            norm_outputs = F.normalize(outputs.squeeze(), p=1.0, dim=0)
-            preference = torch.cumsum(norm_outputs, dim=0).squeeze().cpu()
-
+        result = self.mess_classifier.predict([input_text])
         measurement = self.energy_monitor.end_window(f"classifier_prediction_step")
 
         self.wandb_run.log({
-            "classifier/pred_step_loss": float(step_loss / stepper),
-            "classifier/pred_running_loss": float(self.classifier_running_train_loss / self.classifier_train_steps),
             "classifier/pred_step_energy": sum([v for v in measurement.gpu_energy.values()])
         }, step=timestamp)
 
-        return preference, label
+        return result
 
     def shutdown(self):
         self.__evict_vllm_models()
