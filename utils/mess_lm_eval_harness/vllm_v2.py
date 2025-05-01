@@ -122,6 +122,7 @@ class MessLMEvalVLLM(TemplateLM):
                 seed=seed,
                 enforce_eager=enforce_eager,
                 )
+
         else:
             eval_logger.warning(
                 "You might experience occasional issues with model weight downloading when data_parallel is in use. To ensure stable performance, run with data_parallel_size=1 until the weights are downloaded and cached."

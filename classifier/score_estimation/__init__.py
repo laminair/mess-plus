@@ -17,10 +17,12 @@ class RoutingScoreEstimator:
     ):
 
         if scoring_method == "raw":
+            return logits
+        elif scoring_method == "cumsum":
             if len(logits.shape) > 1:
-                score = np.cumsum(logits, axis=1) / (np.mean(logits) * logits.shape[1])
+                score = np.cumsum(logits, axis=1) / (np.sum(logits) * logits.shape[1])
             else:
-                score = np.cumsum(logits, axis=1) / np.mean(logits)
+                score = np.cumsum(logits, axis=1) / np.sum(logits)
 
         else:
             raise NotImplementedError(

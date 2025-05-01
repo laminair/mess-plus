@@ -1,8 +1,9 @@
+import logging
 import pandas as pd
 import os
 
 from datetime import datetime
-from lm_eval.api.task import Instance
+from lm_eval.api.task import Instance, Task
 
 from typing import Dict
 
@@ -23,61 +24,25 @@ class StreamingDataProcessor:
         self.save_frequency = save_frequency
         self.row_count = 0
         self.save_count = 0
+        self.benchmark_name = None
 
     def process_row(
         self,
-        row_dict: dict,
-        input_text: str = None,
-        ground_truth: str = None,
-        benchmark_name: str = None,
-        doc_id: str = None,
-        write_to_disk: bool = True,
-        write_to_history: bool = True
+        sample: pd.DataFrame,
+        benchmark_name: str,
+        write_to_disk: bool = True
     ):
-        """
-        Process a single row of dictionary data.
+        self.benchmark_name = benchmark_name
+        self.df = pd.concat([self.df, sample], ignore_index=True)
 
-        Args:
-            row_dict (dict): Dictionary with structure like
-                {'small': ([-2.58...], ['yes'], [False]), 'medium': ([-4.82...], ['yes'], [False])}
-            input_text (str, optional): The input text for this row
-            ground_truth (str, optional): The ground truth for this row
-            benchmark_name (str, optional): The benchmark name for this row
-            doc_id (str, optional): The document ID for this row
-            write_to_disk (bool, optional): Whether to write samples to disk
-            write_to_history (bool, optional): Whether to concatenate new rows to previous rows and return the entire df
-        """
-        # Create a flattened dictionary for this row
-        flat_dict = {}
+        # Increment row counter
+        self.row_count += 1
 
-        # Add the two extra columns
-        flat_dict["input_text"] = input_text
-        flat_dict["ground_truth"] = ground_truth
-        flat_dict["doc_id"] = doc_id
+        # Save if we've reached the save frequency
+        if self.row_count % self.save_frequency == 0 and write_to_disk:
+            self.save_to_disk(benchmark_name=benchmark_name)
 
-        # For each key in the dictionary
-        for model_category, values in row_dict.items():
-            for k, v in values.items():
-                flat_dict[f"{model_category}_{k}"] = v[0] if type(v) is list else v
-
-        # Convert the flattened dictionary to a DataFrame row and append
-        row_df = pd.DataFrame([flat_dict])
-
-        # Append to the main DataFrame
-        if write_to_history:
-            self.df = pd.concat([self.df, row_df], ignore_index=True)
-
-            # Increment row counter
-            self.row_count += 1
-
-            # Save if we've reached the save frequency
-            if self.row_count % self.save_frequency == 0 and write_to_disk:
-                self.save_to_disk(benchmark_name=benchmark_name)
-
-            return self.row_count
-
-        else:
-            return row_df
+        return self.row_count
 
     def save_to_disk(self, final=False, benchmark_name: str = None):
         """
@@ -89,6 +54,9 @@ class StreamingDataProcessor:
         """
         if self.df.empty:
             return
+
+        # Set benchmark name to place final chunk of data into the right folder
+        self.benchmark_name = benchmark_name
 
         # Create filename with timestamp
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -104,19 +72,19 @@ class StreamingDataProcessor:
 
         # Save to CSV
         self.df.to_csv(full_path, index=False)
-        print(f"Saved {len(self.df)} rows to {full_path}")
+        logging.info(f"Saved {len(self.df)} rows to {full_path}")
 
         return full_path
 
-    def finalize(self, write_to_disk: bool = True):
+    def finalize(self):
         """
         Save any remaining data and return summary.
         write_to_disk (bool, optional): Whether to write samples to disk
         """
 
         # Save any remaining data that hasn't hit the save threshold
-        if self.row_count % self.save_frequency != 0 and write_to_disk:
-            final_path = self.save_to_disk(final=True)
+        if self.row_count % self.save_frequency != 0:
+            final_path = self.save_to_disk(final=True, benchmark_name=self.benchmark_name)
         else:
             final_path = None
 
@@ -179,61 +147,47 @@ class DataExtractor:
 
 
 class SampleGenerator:
-    def make_boolq_sample(self, request: Instance, label_dict: dict):
-        """
-        Creates a pandas DataFrame for BoolQ format based on the provided input text and label dictionary.
-        BoolQ asks the same question twice with different paragraphs and background information. One variant is true,
-        the other one is false. When creating the "input_text" for our classifier, we need to concatenate the question
-        and the ground_truth response. Otherwise, we will confuse the model.
 
-        Args:
-            request (Instance): The input request object provided by LM-Eval
-            label_dict (dict): Dictionary with keys as label names and values as tuples of (log prob, label, correct)
+    def __init__(self):
+        self.benchmark_metrics_mapping = {
+            "boolq": "acc"
+        }
 
-        Returns:
-            pd.DataFrame: DataFrame with columns for id, input_text, and a label column for each key in label_dict
-        """
+    def make_boolq_sample(self, doc_id, input_data, model_response_data, stage):
 
         # Create a dictionary to hold our data
         data = {
-            "doc_id": request.doc_id,
+            "doc_id": doc_id,
             # This is the question plus the expected model output ("yes"/"no").
-            "input_text": f"{request.doc['question']} -{request.arguments[1]}"
+            "input_text": f"{input_data['question']}"
         }
 
-        def get_value(val):
-            if type(val) is list:
-                out = get_value(val[0])
-            elif type(val) is bool:
-                out = int(val)
-            else:
-                out = val
-
-            return out
-
-        # Add a column for each label in the label_dict
-        for model_category, model_outputs in label_dict.items():
-            for name, value in model_outputs.items():
-                data[f"{name}_{model_category}"] = get_value(value)
+        if stage == "train" and model_response_data is not None:
+            metric_name = self.benchmark_metrics_mapping["boolq"]
+            for model_category in model_response_data.keys():
+                data.update({
+                    f"benchmark_name": "boolq",
+                    f"label_{model_category}": model_response_data[model_category][metric_name],
+                    f"{metric_name}_{model_category}": model_response_data[model_category][metric_name],
+                    f"energy_consumption_{model_category}": model_response_data[model_category]["energy_consumption"],
+                    f"inference_time_{model_category}": model_response_data[model_category]["inference_time"],
+                })
 
         # Create and return the DataFrame
         return pd.DataFrame([data])
 
-    def make_sample(self, request: Instance, label_dict, benchmark_name):
-        """
-        Routes the input to the appropriate sample creation function based on benchmark_name.
+    def make_sample(
+        self,
+        doc_id: int,
+        input_data: dict,
+        task: Task,
+        model_response_data: dict = None,
+        stage: str = "train"
+    ):
 
-        Args:
-            input_text (str): The input text to include in the sample
-            label_dict (dict): Dictionary with keys as label names and values as tuples
-            benchmark_name (str): Name of the benchmark to determine routing
-
-        Returns:
-            pd.DataFrame: Properly formatted DataFrame based on the benchmark
-        """
-        if benchmark_name.lower() == "boolq":
-            return self.make_boolq_sample(request, label_dict)
+        if task.config.task.lower() == "boolq":
+            return self.make_boolq_sample(doc_id, input_data, model_response_data, stage)
         else:
             # Default format or handle other benchmark types
             # For now, using the same format as BoolQ
-            raise NotImplementedError(f"Sample creator for benchmark {benchmark_name} not implemented.")
+            raise NotImplementedError(f"Sample creator for benchmark {task.config.task.lower()} not implemented.")

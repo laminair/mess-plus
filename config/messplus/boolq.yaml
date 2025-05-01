@@ -1,8 +1,7 @@
 run_name: "baseline"
 seed: 43
 
-# You need to load the models in inverse order as the CUDA graph generation takes extra space that goes beyond the
-# memory utilization limit...
+# You need to provide models in ascending order by parameter count for MESS+ to work correctly.
 model_zoo:
   meta-llama/Llama-3.2-1B-Instruct:
     category: "small"
@@ -37,15 +36,17 @@ classifier_model:
   reset_optimizer: false
   regularization_lambda: 0.0
   gpu_index: 0
-  disable_tqdm: true
+  disable_tqdm: false
   checkpoint_path: "classifier/checkpoints/mess_classifier_best_ckpt.pt"  # Path starts from the project root path.
   use_pretrained_classifier: true
   scoring_method: raw
+  generate_training_dataset: false
+  write_training_dataset_to_disk: false
 
 algorithm:
-  alpha: 0.7
-  c: 0.01
-  V: 1
+  alpha: 0.75
+  c: 1
+  V: 0.1
 
 lm_eval:
   # The run name will be the first benchmark in the list below.

@@ -29,13 +29,16 @@ class BertPandasDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
 
         if self.input_type == "df":
-            text = self.dataframe.iloc[idx][self.text_col]
+            text = self.dataframe.iloc[idx][self.text_col].values
             labels = self.dataframe.iloc[idx][self.y_cols].values
         elif self.input_type == "series":
-            text = self.dataframe[self.text_col]
+            text = self.dataframe[self.text_col].values
             labels = self.dataframe[self.y_cols].values
         else:
             raise NotImplementedError("Handler for data type not implemented.")
+
+        if type(text) is np.ndarray:
+            text = text[0]
 
         encoding = self.tokenizer(
             text,

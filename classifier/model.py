@@ -10,8 +10,10 @@ from pathlib import Path
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
-from transformers import AutoTokenizer, get_linear_schedule_with_warmup, AutoModel, AutoConfig
+from transformers import AutoTokenizer, get_linear_schedule_with_warmup, AutoModel, AutoConfig, AutoModelForSequenceClassification
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
+
+from typing import List
 
 
 # Get absolute path of current file
@@ -100,6 +102,7 @@ class MultilabelBERTClassifier:
             model_name="answerdotai/ModernBERT-base",
             num_labels=None,
             learning_rate=2e-5,
+            momentum=0.0,
             weight_decay=0.01,
             batch_size=16,
             max_length=128,
@@ -113,6 +116,7 @@ class MultilabelBERTClassifier:
         self.model_name = model_name
         self.num_labels = num_labels
         self.learning_rate = learning_rate
+        self.momentum = momentum
         self.weight_decay = weight_decay
         self.batch_size = batch_size
         self.max_length = max_length
@@ -151,28 +155,11 @@ class MultilabelBERTClassifier:
             collate_fn=self.collate_fn
         )
 
-        # Setup optimizer and scheduler
-        # Use param groups to apply different learning rates to BERT and classification layers
-        if self.freeze_bert_layers:
-            # If BERT is frozen, only train the classifier
-            parameters = self.model.classifier.parameters()
-        else:
-            # Otherwise, use different learning rates
-            bert_params = {'params': self.model.bert.parameters(), 'lr': self.learning_rate}
-            classifier_params = {'params': self.model.classifier.parameters(), 'lr': self.learning_rate * 10}
-            parameters = [bert_params, classifier_params]
-
-        optimizer = optim.SGD(
-            parameters,
-            lr=self.learning_rate,
-            weight_decay=self.weight_decay
-        )
-
         total_steps = len(train_loader) * epochs
         warmup_steps = int(total_steps * self.warmup_ratio)
 
         scheduler = get_linear_schedule_with_warmup(
-            optimizer,
+            self.optimizer,
             num_warmup_steps=warmup_steps,
             num_training_steps=total_steps
         )
@@ -209,7 +196,7 @@ class MultilabelBERTClassifier:
                 batch = {k: v.to(self.device) for k, v in batch.items()}
 
                 # Clear gradients
-                optimizer.zero_grad()
+                self.optimizer.zero_grad()
 
                 # Forward pass
                 outputs = self.model(
@@ -219,12 +206,13 @@ class MultilabelBERTClassifier:
                 )
 
                 logits = outputs["logits"]
+                # print(logits)
                 loss = criterion(logits, batch['labels'])
 
                 # # Backward pass and optimize
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)  # Gradient clipping
-                optimizer.step()
+                self.optimizer.step()
                 scheduler.step()
 
                 # Update statistics
@@ -239,7 +227,7 @@ class MultilabelBERTClassifier:
                 progress_bar.set_postfix({
                     'loss': f"{running_loss:.4f}",
                     'batch_loss': f"{batch_loss:.4f}",
-                    'lr': f"{scheduler.get_last_lr()[0]:.1e}"
+                    'lr': f"{self.learning_rate}"  # f"{scheduler.get_last_lr()[0]:.1e}"
                 })
 
                 if wandb.run is not None:
@@ -247,7 +235,8 @@ class MultilabelBERTClassifier:
                     wandb.log({
                         "batch": idx + epoch * len(train_loader),
                         "batch_loss": batch_loss,
-                        "learning_rate": scheduler.get_last_lr()[0]
+                        "learning_rate": scheduler.get_last_lr()[0],
+                        "running_loss": running_loss,
                     })
 
             avg_train_loss = train_loss / train_steps
@@ -356,7 +345,7 @@ class MultilabelBERTClassifier:
                 best_val_f1 = val_f1
                 patience_counter = 0
                 # Save the best model
-                self.save_model(f"{FILE_FOLDER_PATH}/checkpoints/best_model.pt")
+                self.save_model(f"{FILE_FOLDER_PATH}/checkpoints/mess_classifier_best_ckpt.pt")
                 logger.info("  ✓ Best model saved!")
             else:
                 patience_counter += 1
@@ -419,7 +408,7 @@ class MultilabelBERTClassifier:
 
         return metrics
 
-    def predict(self, texts):
+    def predict(self, texts: List[str]):
         """Predict labels for the given texts."""
         self.model.eval()
 
@@ -437,16 +426,17 @@ class MultilabelBERTClassifier:
 
         # Make predictions
         with torch.no_grad():
-            outputs = self.model.forward(**inputs)
+            outputs = self.model(**inputs)
             logits = outputs["logits"]
             probs = torch.sigmoid(logits).cpu().numpy()
             predictions = (probs >= self.threshold).astype(int)
 
+
         return predictions, probs
 
-    def make_model_if_not_exists(self, train_dataset=None):
+    def make_model_if_not_exists(self, train_dataset):
         if not hasattr(self, 'model'):
-            if self.num_labels is None and train_dataset is not None:
+            if self.num_labels is None:
                 # Infer from the dataset
                 sample = train_dataset[0]
                 if isinstance(sample, dict) and 'labels' in sample:
@@ -462,6 +452,24 @@ class MultilabelBERTClassifier:
                 freeze_bert_layers=self.freeze_bert_layers
             )
             self.model.to(self.device)
+
+            # Setup optimizer and scheduler
+            # Use param groups to apply different learning rates to BERT and classification layers
+            if self.freeze_bert_layers:
+                # If BERT is frozen, only train the classifier
+                parameters = self.model.classifier.parameters()
+            else:
+                # Otherwise, use different learning rates
+                bert_params = {'params': self.model.bert.parameters(), 'lr': self.learning_rate}
+                classifier_params = {'params': self.model.classifier.parameters(), 'lr': self.learning_rate * 10}
+                parameters = [bert_params, classifier_params]
+
+            self.optimizer = optim.SGD(
+                parameters,
+                lr=self.learning_rate,
+                weight_decay=self.weight_decay,
+                momentum=self.momentum,
+            )
 
     def save_model(self, path):
         """Save the model, tokenizer and configuration."""
@@ -482,7 +490,6 @@ class MultilabelBERTClassifier:
     def load_model(self, path):
         """Load the model from the given path."""
         checkpoint = torch.load(path, map_location=self.device)
-
         # Update configuration
         config = checkpoint['config']
         self.model_name = config['model_name']
@@ -492,10 +499,20 @@ class MultilabelBERTClassifier:
 
         # Load the model if not already initialized
         if not hasattr(self, 'model'):
-            self.make_model_if_not_exists()
+            self.model = BERTClassifier(
+                model_name=self.model_name,
+                num_labels=self.num_labels,
+                dropout_rate=self.dropout_rate,
+                freeze_bert_layers=self.freeze_bert_layers
+            )
+
+        # Convert the state dict keys from "bert.*" to "model.*"
+        state_dict = checkpoint['model_state_dict']
 
         # Load state dict
-        self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+        self.model.cpu()
+        # We still use strict=False since there might be some keys that don't match exactly
+        self.model.load_state_dict(state_dict, strict=True)
         self.model.to(self.device)
 
         # Load tokenizer if saved

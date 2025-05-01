@@ -9,6 +9,8 @@ import pandas as pd
 import transformers
 import torch
 import numpy as np
+from pandas import DataFrame
+
 import wandb
 import yaml
 
@@ -95,7 +97,8 @@ class MessPlusAutomaticModelSelector(object):
 
         self.energy_monitor = ZeusMonitor(gpu_indices=[i for i in range(NUM_GPUS)], approx_instant_energy=True)
         self.num_exploration_steps = []
-        self.large_model_chosen_ratio = []
+        self.score_list = []
+        self.model_chosen_list = []
         self.classifier_running_train_loss = 0.0
         self.classifier_train_steps = 0
         self.classifier_running_val_loss = 0.0
@@ -134,14 +137,21 @@ class MessPlusAutomaticModelSelector(object):
         self.eval_tasks = get_task_list(self.task_dict)
 
         # Config to capture the inference outputs for classifier validation
-        self.infer_data_processor = StreamingDataProcessor(
-            save_path=f"data/inference_outputs/",
+        self.data_writer = StreamingDataProcessor(
+            save_path=f"data/inference_outputs",
             file_prefix="inference_data_",
             save_frequency=100
         )
 
         self.reference_data_reader = DataExtractor()
         self.sample_generator = SampleGenerator()
+
+        # Warnings and Info messages at the start
+        if self.classifier_config["generate_training_dataset"]:
+            logger.warning(
+                f"You have enabled 'generate_training_dataset'. "
+                f"This will generate a dataset to train the routing classifier and will NOT run the MESS+ algorithm!"
+            )
 
     def launch(
         self,
@@ -266,21 +276,37 @@ class MessPlusAutomaticModelSelector(object):
             
         # aggregate Instances by LM method requested to get output.
         requests = defaultdict(list)
+        unique_doc_ids = {}
+
         for instance in task.instances:
             reqtype = instance.request_type
             requests[reqtype].append(instance)
 
+            if reqtype in unique_doc_ids.keys():
+                unique_doc_ids[reqtype].add(instance.doc_id)
+            else:
+                unique_doc_ids[reqtype] = {instance.doc_id}
+
         ### Run LM on inputs, get all outputs ###
         # execute each type of request
-
-        for idx, (reqtype, reqs) in enumerate(requests.items()):
+        instances_by_doc_id = defaultdict(list)
+        for reqtype, reqs in requests.items():
             logger.info(f"Processing {reqtype} requests for {task.task_name} dataset with a total of {len(requests[reqtype])} samples.")
-            # create `K` copies of each request `req` based off `K = req.repeats`
-            cloned_reqs = []
-            for req in reqs:
-                cloned_reqs.extend([req] * req.repeats)
+            # We modify this part to bundle all document ids.
+            benchmark_documents_by_id = {}
 
-            logger.info(f"Dataset repeats factor: {len(cloned_reqs) / len(requests[reqtype])}")
+            # create `K` copies of each request `req` based off `K = req.repeats`
+            # cloned_reqs = []
+            num_requests = 0
+            for req in reqs:
+                if req.doc_id in benchmark_documents_by_id.keys():
+                    benchmark_documents_by_id[req.doc_id] += [req] * req.repeats
+                else:
+                    benchmark_documents_by_id[req.doc_id] = [req] * req.repeats
+
+                num_requests += 1
+
+            logger.info(f"Dataset replication factor: {num_requests / len(unique_doc_ids[reqtype])}")
             with wandb.init(
                 project=self.wandb_project_name,
                 name=task.task_name,
@@ -294,40 +320,103 @@ class MessPlusAutomaticModelSelector(object):
 
                 # We initialize one classifier model for every benchmark
                 self.__warmup_classifier_model()
-                for jdx, request in enumerate(cloned_reqs):
-                    # logger.info(f"Running request #{jdx}...")
-                    results = self.run_request(request, task, timestamp=jdx)
-                    # reference_data = self.reference_data_reader.get_data(
-                    #     benchmark_name=task.task_name,
-                    #     request=request
-                    # )
+                model_categories = [i for i in self.vllm_models.keys()]
+                for timestamp, (doc_id, request_list) in enumerate(benchmark_documents_by_id.items()):
+                    x_t = self.__sample_from_bernoulli(c=self.algorithm_config["c"], timestamp=timestamp)
 
-                    # self.infer_data_processor.process_row(
-                    #     outputs,
-                    #     input_text=reference_data["input_data"],
-                    #     ground_truth=reference_data["ground_truth"],
-                    #     doc_id=reference_data["doc_id"],
-                    #     benchmark_name=task.task_name,
-                    #     write_to_disk=self.lm_eval_config["write_to_disk"]
-                    # )
-
-                    for result in results:
-                        request.resps.append(
-                            (result[0], result[1])
+                    if x_t == 1 or self.classifier_config["generate_training_dataset"]:
+                        logger.info(f"Running request #{timestamp} - Training")
+                        updated_requests, result_scores, training_sample = self.__get_training_sample(
+                            request_list=request_list,
+                            task=task,
+                            doc_id=doc_id
                         )
+
+                        if self.classifier_config["write_training_dataset_to_disk"]:
+                            num_samples_saved = self.data_writer.process_row(sample=training_sample, benchmark_name=task.task_name)
+                            logger.debug(f"Saved {num_samples_saved} samples to disk.")
+
+                        # This assumes an increasing ordering of models by parameter count.
+                        largest_model = model_categories[-1]
+                        instances_to_propagate = updated_requests[largest_model]
+                        result_score = result_scores[largest_model]
+                        chosen_model_id = len(model_categories) - 1
+
+                    else:
+                        logger.info(f"Running request #{timestamp} - Estimating")
+                        selected_doc = request_list[0].doc
+                        sample = self.sample_generator.make_sample(
+                            doc_id=doc_id,
+                            input_data=selected_doc,
+                            task=task,
+                        )
+
+                        preds, probs = self.mess_classifier.predict(texts=[sample["input_text"].item()])
+                        energy = []
+                        for model_category in self.measurements.keys():
+                            energy.append(
+                                sum(
+                                    map(lambda x: sum([
+                                        i for i in x.gpu_energy.values()
+                                    ]) / len(self.measurements[model_category]), self.measurements[model_category])
+                                )
+                            )
+
+                        energy = np.array(energy).reshape(-1, 1)
+                        probs = probs.reshape(-1, 1)
+                        cost_fn = self.algorithm_config["V"] * energy + self.Q * (
+                                self.algorithm_config["alpha"] - probs
+                        )
+
+                        cost_fn = cost_fn.reshape(1, -1)
+                        print(f"COST FN: {cost_fn}.")
+                        chosen_model_id = np.argmin(cost_fn)
+                        model_category_chosen = model_categories[chosen_model_id]
+
+                        result = self.query_model(
+                            request_list=request_list,
+                            doc_id=doc_id,
+                            selected_doc=selected_doc,
+                            task=task,
+                            model=self.vllm_models[model_category_chosen],
+                            model_category=model_category_chosen,
+                        )
+
+                        instances_to_propagate = result["updated_requests"]
+                        # TODO: The dict key at this point may have a different name for different benchmarks!
+                        result_score = result["acc"]
+
+                    for instance in instances_to_propagate:
+                        instances_by_doc_id[doc_id].append(instance)
+
+                    self.Q = max(0.0, self.Q + self.algorithm_config["alpha"] - result_score)
+                    self.score_list.append(result_score)
+                    self.model_chosen_list.append(chosen_model_id)
+                    self.num_exploration_steps.append(x_t)
+
+                    print(f"Q LENGTH: {self.Q}.")
+
+                    if wandb.run is not None:
+                        wandb.log({
+                            "mess/accuracy": sum(self.score_list) / (timestamp + 1),
+                            "mess/model_chosen_ratio": sum(self.model_chosen_list) / (timestamp + 1),
+                            "mess/exploration_rate": sum(self.num_exploration_steps) / (timestamp + 1),
+                            "mess/q_length": self.Q,
+                        }, step=timestamp)
+
+                if self.classifier_config["generate_training_dataset"] and self.classifier_config["write_training_dataset_to_disk"]:
+                    writer_stats = self.data_writer.finalize()
+                    logger.info(f"Writing training dataset to disk done. Details: {writer_stats}")
 
         ### Postprocess outputs ###
         task.apply_filters()
 
         ### Collect values of metrics on all datapoints ###
-        # # unpack results and sort back in order and return control to Task
-        # Pre-process task.instances to group by doc_id
-        instances_by_doc_id = defaultdict(list)
-        for instance in task.instances:
-            instances_by_doc_id[instance.doc_id].append(instance)
+
         # Sort instances within each group
         for instances in instances_by_doc_id.values():
             instances.sort(key=lambda x: x.idx)
+
         # iterate over different filters used
         for filter_key in task.instances[0].filtered_resps.keys():
             doc_iterator = task.doc_iterator(
@@ -344,6 +433,7 @@ class MessPlusAutomaticModelSelector(object):
                         results_input.append(req.filtered_resps[filter_key])
 
                 metrics = task.process_results(doc, results_input)
+
                 if log_samples:
                     target = task.doc_to_target(doc)
                     example = {
@@ -377,169 +467,44 @@ class MessPlusAutomaticModelSelector(object):
         # aggregate results ; run bootstrap CIs
         task_output.calculate_aggregate_metric(bootstrap_iters=bootstrap_iters)
 
-        # self.infer_data_processor.finalize(write_to_disk=self.lm_eval_config["write_to_disk"])
         self.__evict_vllm_models()
 
         return None
 
-    def query_model(self, model, request, model_category) -> Dict[str, List]:
+    def query_model(self, request_list, model, model_category, doc_id, selected_doc, task) -> Dict[str, List]:
+        assert type(request_list) is list, "Make sure to pass a list of requests to the query_model() function."
         self.energy_monitor.begin_window(f"pass_{model_category}")
 
+        outputs = None
+        results = {}
         try:
-            output = getattr(
+            outputs = getattr(
                 model["vllm_eval_instance"],
-                request.request_type
+                request_list[0].request_type
             )(
-                [request] if type(request) is not list else request, disable_tqdm=True
+                request_list, disable_tqdm=True
             )
 
+            for request, output in zip(request_list, outputs):
+                request.resps.append((output[0], output[1]))
+
         except torch.OutOfMemoryError as e:
-            output = None
-            logger.error(f"Encountered error processing document #{request.doc_id}: {e}")
+            logger.error(f"Encountered error processing document #{doc_id}: {e}")
 
         measurement = self.energy_monitor.end_window(f"pass_{model_category}")
         self.measurements[model_category].append(measurement)
 
-        nll_scores = []
-        responses = []
-        correct = []
-        greedy_output = []
-        ground_truths = []
-        if output is not None:
-            ground_truth = request.arguments[1].strip().lower()
-            for out in output:
-                nll_scores.append(out[0])
-                greedy_output.append(out[1])
-                responses.append(out[2])
-                ground_truths.append(ground_truth)
-                correct.append(int(out[2] == ground_truth))
-
-                self.nll_scores[model_category].append(out[0])
-                self.greedy_output[model_category].append(out[1])
-                self.predictions[model_category].append(out[2])
-                self.ground_truths[model_category].append(ground_truth)
-                self.labels[model_category].append(int(out[2] == ground_truth))
-
-        # LM-Eval expects outputs in the format of (log_probs, greedy_output, response_str)
-        # MESS+ expects outputs in the format of (log_probs, labels, response_str)
-        return {
-            "nll_scores": nll_scores,
-            "greedy_output": greedy_output,
-            "responses": responses,
-            "ground_truth": ground_truths,
-            "labels": correct,
+        results.update({
+            "updated_requests": request_list,
             "energy_consumption": sum([val for val in measurement.gpu_energy.values()]),
             "inference_time": measurement.time
-        }
+        })
 
-    def run_request(self, request: Instance, task: Task, timestamp: int = 0):
-        model_categories = [i for i in self.vllm_models.keys()]
-        x_t = self.__sample_from_bernoulli(c=self.algorithm_config["c"], timestamp=timestamp)
+        if outputs:
+            metrics = task.process_results(selected_doc, [(i[0], i[1]) for i in outputs])
+            results.update(metrics)
 
-        if x_t == 1:
-            logger.info(f"Running request #{timestamp} - Training")
-            outputs = self.__get_training_sample(request=request, task=task)
-
-            # outputs = self.__train_classifier_one_step(
-            #     training_sample=outputs,
-            #     timestamp=timestamp,
-            #     label_col_identifier="labels_"
-            # )
-
-            # We return the output of the largest model (as we assume the larger the model, the more capable).
-            chosen_model = "large"
-            if "large" in self.vllm_models.keys():
-                chosen_model = "large"
-            elif "medium" in self.vllm_models.keys():
-                chosen_model = "medium"
-            else:
-                chosen_model = "small"
-
-            # This is the format needed by LM-Eval to generate final scores.
-            result = (
-                outputs.iloc[0][f"nll_scores_{chosen_model}"],
-                bool(outputs.iloc[0][f"greedy_output_{chosen_model}"]),
-                outputs.iloc[0][f"responses_{chosen_model}"]
-            )
-
-            chosen_model_id = len(self.vllm_models.keys()) - 1
-            response_is_correct = bool(outputs.iloc[0][f"labels_{chosen_model}"].item())
-            logger.info(
-                f"Model choice -ID: {chosen_model_id} - "
-                f"Response correct: {response_is_correct}"
-            )
-
-        else:
-
-            logger.info(f"Running request #{timestamp} - Estimating")
-
-            # We treat the normalized probabilities as proxy for user satisfaction scores, i.e., the likelihood whether
-            # a model will satisfy a user request.
-            classifier_preds, logits = self.estimate_user_preferences(
-                request=request,
-                timestamp=timestamp
-            )
-
-            energy = []
-            for model_category in self.measurements.keys():
-                energy.append(
-                    sum(map(lambda x: sum([i for i in x.gpu_energy.values()]) / len(self.measurements[model_category]),
-                            self.measurements[model_category]))
-                )
-
-            # logs.update({f"algorithm/energy_estimate_{cat}": energy[idx] for idx, cat in enumerate(self.vllm_models.keys())})
-            energy = np.array(energy).reshape(-1, 1)
-            classification_scores = self.scoring_engine.get_scores(
-                logits=logits,
-                scoring_method=self.classifier_config["scoring_method"],
-            )
-            classification_scores = classification_scores.reshape(-1, 1)
-            cost_fn = self.algorithm_config["V"] * energy + self.Q * (
-                    self.algorithm_config["alpha"] - classification_scores
-            )
-
-            cost_fn = cost_fn.reshape(1, -1)
-            chosen_model_id = np.argmin(cost_fn)
-            model_to_choose = model_categories[chosen_model_id]
-
-            response = self.query_model(
-                model=self.vllm_models[model_to_choose],
-                request=request,
-                model_category=model_to_choose
-            )
-
-            # This is the format needed by LM-Eval to generate final scores.
-            result = (
-                response[f"nll_scores"][0],
-                bool(response[f"greedy_output"]),
-                response[f"responses"][0]
-            )
-
-            response_is_correct = response["labels"][0]
-            logger.info(
-                f"Cost-function values: {cost_fn} - "
-                f"Model choice -ID: {chosen_model_id} - "
-                f"NAME: {model_to_choose} - "
-                f"Response correct: {response_is_correct}"
-            )
-
-        self.Q = max(0.0, self.Q + self.algorithm_config["alpha"] - response_is_correct)
-        self.num_exploration_steps.append(x_t)
-        self.large_model_chosen_ratio.append(chosen_model_id)
-
-        if wandb.run is not None:
-            wandb.log({
-                "exploration_ratio": sum(self.num_exploration_steps) / (timestamp + 1),
-                "mess/q_size": self.Q,
-                "mess/chosen_model_id": chosen_model_id,
-                "mess/response_correct": response_is_correct,
-                "mess/large_model_chosen_ratio": sum(self.large_model_chosen_ratio) / (timestamp + 1)
-            })
-
-        if type(result) is not list:
-            result = [result]
-
-        return result
+        return results
 
     def __sample_from_bernoulli(self, c: float, timestamp: int):
 
@@ -721,24 +686,32 @@ class MessPlusAutomaticModelSelector(object):
 
         return adjusted_task_dict
 
-    def __get_training_sample(self, request: Instance, task: Task) -> pd.DataFrame:
+    def __get_training_sample(self, request_list: List[Instance], doc_id: int, task: Task) -> tuple[
+        dict[Any, Any], dict[Any, Any], Any]:
         outputs = {i: dict() for i in self.vllm_models.keys()}
+        selected_doc = request_list[0].doc
+
         for model_category, model in self.vllm_models.items():
             outputs[model_category] = self.query_model(
-                model,
-                request,
-                model_category
+                request_list=request_list,
+                model=model,
+                model_category=model_category,
+                doc_id=doc_id,
+                task=task,
+                selected_doc=selected_doc,
             )
 
-        training_sample = self.sample_generator.make_sample(
-            request=request,
-            label_dict=outputs,
-            benchmark_name=task.task_name
+        sample = self.sample_generator.make_sample(
+            doc_id=doc_id,
+            input_data=selected_doc,
+            model_response_data=outputs,
+            task=task,
+            stage="train"
         )
 
-        # logger.debug(f"Model outputs: {outputs}.")
-
-        return training_sample
+        updated_inference_requests = {model_category: data["updated_requests"] for model_category, data in outputs.items()}
+        result_scores = {model_category: data["acc"] for model_category, data in outputs.items()}
+        return updated_inference_requests, result_scores, sample
 
     @staticmethod
     def validate_tasks(lm, eval_tasks, confirm_run_unsafe_code: bool = True):
