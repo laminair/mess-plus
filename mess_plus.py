@@ -139,7 +139,7 @@ class MessPlusAutomaticModelSelector(object):
 
         # Config to capture the inference outputs for classifier validation
         self.data_writer = StreamingDataProcessor(
-            save_path=f"data/inference_outputs",
+            save_path=f"{PROJECT_ROOT_PATH}/data/inference_outputs",
             file_prefix="inference_data_",
             save_frequency=100
         )
