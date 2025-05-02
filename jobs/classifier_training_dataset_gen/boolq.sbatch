@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -p lrz-hgx-h100-92x4
+#SBATCH -p lrz-hgx-h100-94x4
 #SBATCH --gres=gpu:2
 #SBATCH --time=01:00:00
 #SBATCH -o output_%A.out
