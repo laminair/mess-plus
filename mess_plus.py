@@ -532,6 +532,7 @@ class MessPlusAutomaticModelSelector(object):
                 self.vllm_models[data["category"]] = {}
 
             os.environ["CUDA_VISIBLE_DEVICES"] = str(data["gpu_indices"]).replace("[", "").replace("]", "")
+            print(os.environ["CUDA_VISIBLE_DEVICES"])
             self.vllm_models[data["category"]] = {
                 "model_name": model,
                 "vllm_eval_instance": MessLMEvalVLLM(
