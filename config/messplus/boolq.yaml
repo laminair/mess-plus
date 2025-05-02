@@ -56,5 +56,5 @@ lm_eval:
   num_repeats: 1
   limit_num_samples: null
   # TODO: Make sure we disable eager mode for the actual experiments to be as energy efficient as possible.
-  enforce_eager: true
+  enforce_eager: false
   write_to_disk: false
