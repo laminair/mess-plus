@@ -13,14 +13,14 @@ model_zoo:
     category: "medium"
     gpu_indices: [0]
     max_seq_len: 2048
-    gpu_memory_utilization: 0.45
+    gpu_memory_utilization: 0.3
     quantization: "bitsandbytes"
-  meta-llama/Llama-3.3-70B-Instruct:
+  unsloth/Llama-3.3-70B-Instruct-bnb-4bit:
     category: "large"
-    gpu_indices: [1]
+    gpu_indices: [0]
     max_seq_len: 2048
-    gpu_memory_utilization: 0.9
-    quantization: null
+    gpu_memory_utilization: 0.35
+    quantization: "bitsandbytes"
 
 classifier_model:
   model_id: "answerdotai/ModernBERT-base"
