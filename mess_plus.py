@@ -384,7 +384,9 @@ class MessPlusAutomaticModelSelector(object):
 
                         instances_to_propagate = result["updated_requests"]
                         # TODO: The dict key at this point may have a different name for different benchmarks!
-                        result_score = result["acc"]
+                        result_score = result[
+                            self.sample_generator.benchmark_metrics_mapping[task.config.task.lower()]
+                        ]
 
                     for instance in instances_to_propagate:
                         instances_by_doc_id[doc_id].append(instance)
@@ -716,7 +718,11 @@ class MessPlusAutomaticModelSelector(object):
         )
 
         updated_inference_requests = {model_category: data["updated_requests"] for model_category, data in outputs.items()}
-        result_scores = {model_category: data["acc"] for model_category, data in outputs.items()}
+        result_scores = {
+            model_category: data[
+                self.sample_generator.benchmark_metrics_mapping[task.config.task.lower()]
+            ] for model_category, data in outputs.items()
+        }
         return updated_inference_requests, result_scores, sample
 
     @staticmethod
