@@ -8,7 +8,7 @@
 cd "$(dirname "$0")"
 
 nvidia-smi
-enroot create /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/messplus.sqsh
+enroot create /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/messplus.sqsh
 
 # Train
 enroot start \
@@ -22,7 +22,7 @@ enroot start \
     --mount /sbin \
     --mount /usr/share/ \
     messplus \
-    VLLM_USE_V1=0 /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/python /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/mess_plus.py \
+    VLLM_USE_V1=0 /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/python /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/mess_plus.py \
     --config config/messplus/boolq.yaml \
     --wandb-entity tum-i13 \
     --project-name mess-plus-classifier-train-dataset-gen
