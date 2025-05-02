@@ -5,19 +5,16 @@ import json
 import logging
 import os
 
+import datasets
 import pandas as pd
-import transformers
 import torch
 import numpy as np
-from pandas import DataFrame
 
 import wandb
 import yaml
 
 from numpy.random import binomial
 from pathlib import Path
-from torch.utils.data import DataLoader
-from torch.nn import functional as F
 from vllm.distributed.parallel_state import destroy_model_parallel, destroy_distributed_environment
 
 from lm_eval.utils import hash_string, handle_non_serializable
@@ -34,7 +31,7 @@ from lm_eval.tasks import Task, TaskManager, get_task_dict
 from lm_eval.api.task import Instance
 
 from utils import is_nested_list
-from utils.data_capturing import StreamingDataProcessor, DataExtractor, SampleGenerator
+from utils.data_capturing import StreamingDataProcessor, SampleGenerator
 from utils.mess_lm_eval_harness.vllm_v2 import MessLMEvalVLLM
 from classifier.model import ContinualMultilabelBERTClassifier
 from classifier.dataset import BertPandasDataset
@@ -43,7 +40,7 @@ from classifier.score_estimation import RoutingScoreEstimator
 from zeus.monitor import ZeusMonitor
 
 from collections import defaultdict
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -60,6 +57,8 @@ PROJECT_ROOT_PATH = Path(__file__).parent.resolve()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "true"
 torch.set_float32_matmul_precision('high')
+
+datasets.config.HF_DATASETS_TRUST_REMOTE_CODE = True
 
 
 class MessPlusAutomaticModelSelector(object):
@@ -126,13 +125,15 @@ class MessPlusAutomaticModelSelector(object):
         self.task_dict = self.__adjust_config(
             self.task_dict,
             gen_kwargs=self.lm_eval_config["gen_kwargs"] if "gen_kwargs" in self.config.keys() else None,
-            predict_only=False,
-            num_fewshot=0,
+            predict_only=self.lm_eval_config["predict_only"] if "predict_only" in self.lm_eval_config.keys() else False,
+            num_fewshot=self.lm_eval_config["num_fewshot"] if "num_fewshot" in self.lm_eval_config.keys() else 0,
             fewshot_random_seed=self.config["seed"]
         )
 
-        for k, v in self.task_dict.items():
-            self.task_dict[k]._config.__dict__.update({"repeats": self.lm_eval_config["num_repeats"]})
+        print(self.task_dict)
+
+        # for k, v in self.task_dict.items():
+        #     self.task_dict[k]._config.__dict__.update({"repeats": self.lm_eval_config["num_repeats"]})
 
         self.eval_tasks = get_task_list(self.task_dict)
 
@@ -143,7 +144,6 @@ class MessPlusAutomaticModelSelector(object):
             save_frequency=100
         )
 
-        self.reference_data_reader = DataExtractor()
         self.sample_generator = SampleGenerator()
 
         # Warnings and Info messages at the start
@@ -309,7 +309,7 @@ class MessPlusAutomaticModelSelector(object):
             logger.info(f"Dataset replication factor: {num_requests / len(unique_doc_ids[reqtype])}")
             with wandb.init(
                 project=self.wandb_project_name,
-                name=task.task_name,
+                name=self.make_wandb_run_name(task=task),
                 entity=self.wandb_entity,
                 config=self.config
             ) as run:
@@ -644,7 +644,13 @@ class MessPlusAutomaticModelSelector(object):
             if isinstance(task_obj, dict):
                 adjusted_task_dict = {
                     **adjusted_task_dict,
-                    **{task_name: self.__adjust_config(task_obj)},
+                    **{task_name: self.__adjust_config(
+                        task_obj,
+                        gen_kwargs=gen_kwargs,
+                        predict_only=predict_only,
+                        num_fewshot=num_fewshot,
+                        fewshot_random_seed=fewshot_random_seed
+                    )},
                 }
 
             else:
@@ -686,8 +692,7 @@ class MessPlusAutomaticModelSelector(object):
 
         return adjusted_task_dict
 
-    def __get_training_sample(self, request_list: List[Instance], doc_id: int, task: Task) -> tuple[
-        dict[Any, Any], dict[Any, Any], Any]:
+    def __get_training_sample(self, request_list: List[Instance], doc_id: int, task: Task) -> tuple[dict[Any, Any], dict[Any, Any], Any]:
         outputs = {i: dict() for i in self.vllm_models.keys()}
         selected_doc = request_list[0].doc
 
@@ -738,20 +743,18 @@ class MessPlusAutomaticModelSelector(object):
                     f"Attempted to run tasks: {incompatible_tasks} which are text-only, but used a model type which only currently supports multimodal tasks."
                 )
 
-    def estimate_user_preferences(self, request: Instance, timestamp: int):
+    def make_wandb_run_name(self, task):
+        name = f"{task.task_name}"
 
-        relevant_data = self.reference_data_reader.get_data(request=request, benchmark_name=request.metadata[0])
-        input_text = relevant_data["input_data"]
+        if self.classifier_config["generate_training_dataset"]:
+            return name + "training-dataset-generation"
 
-        self.energy_monitor.begin_window(f"classifier_prediction_step")
-        result = self.mess_classifier.predict([input_text])
-        measurement = self.energy_monitor.end_window(f"classifier_prediction_step")
+        name += f"a={self.algorithm_config['alpha']}_"
+        name += f"c={self.algorithm_config['c']}_"
+        name += f"V={self.algorithm_config['V']}"
+        name += f"classif-pretrained={self.classifier_config['use_pretrained_classifier']}"
 
-        self.wandb_run.log({
-            "classifier/pred_step_energy": sum([v for v in measurement.gpu_energy.values()])
-        }, step=timestamp)
-
-        return result
+        return name
 
     def shutdown(self):
         self.__evict_vllm_models()

@@ -13,14 +13,14 @@ model_zoo:
     category: "medium"
     gpu_indices: [0]
     max_seq_len: 2048
-    gpu_memory_utilization: 0.45
+    gpu_memory_utilization: 0.35
     quantization: "bitsandbytes"
-  meta-llama/Llama-3.3-70B-Instruct:
-    category: "large"
-    gpu_indices: [1]
-    max_seq_len: 2048
-    gpu_memory_utilization: 0.9
-    quantization: null
+#  meta-llama/Llama-3.3-70B-Instruct:
+#    category: "large"
+#    gpu_indices: [1]
+#    max_seq_len: 2048
+#    gpu_memory_utilization: 0.9
+#    quantization: null
 
 classifier_model:
   model_id: "answerdotai/ModernBERT-base"
@@ -52,7 +52,7 @@ algorithm:
 
 lm_eval:
   # The run name will be the first benchmark in the list below.
-  benchmarks: ["boolq"]
+  benchmarks: ["lambada_standard"]
   num_repeats: 1
   limit_num_samples: null
   # TODO: Make sure we disable eager mode for the actual experiments to be as energy efficient as possible.
