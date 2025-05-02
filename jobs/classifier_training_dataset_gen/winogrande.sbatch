@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -p lrz-hgx-h100-94x4
 #SBATCH --gres=gpu:2
-#SBATCH --time=04:30:00
+#SBATCH --time=4:30:00
 #SBATCH -o output_%A.out
 #SBATCH --exclude lrz-hgx-h100-030
 
@@ -24,6 +24,6 @@ enroot start \
     --mount /usr/share/ \
     messplus \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/python /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/mess_plus.py \
-    --config /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/config/messplus/boolq.yaml \
+    --config /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/config/messplus/winogrande.yaml \
     --wandb-entity tum-i13 \
     --project-name mess-plus-classifier-train-dataset-gen

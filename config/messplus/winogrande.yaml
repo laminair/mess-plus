@@ -7,20 +7,20 @@ model_zoo:
     category: "small"
     gpu_indices: [0]
     max_seq_len: 2048
-    gpu_memory_utilization: 0.3
+    gpu_memory_utilization: 0.12
     quantization: null
   unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit:
     category: "medium"
     gpu_indices: [0]
     max_seq_len: 2048
-    gpu_memory_utilization: 0.35
+    gpu_memory_utilization: 0.15
     quantization: "bitsandbytes"
-  meta-llama/Llama-3.3-70B-Instruct:
+  unsloth/Llama-3.3-70B-Instruct-bnb-4bit:
     category: "large"
-    gpu_indices: [1]
+    gpu_indices: [0]
     max_seq_len: 2048
-    gpu_memory_utilization: 0.9
-    quantization: null
+    gpu_memory_utilization: 0.68
+    quantization: "bitsandbytes"
 
 classifier_model:
   model_id: "answerdotai/ModernBERT-base"
