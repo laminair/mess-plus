@@ -26,7 +26,16 @@ print(FOLDER_PATH)
 
 def train_model(config=None):
 
-    with wandb.init(config=config):
+    run_name = args.config_path.split("/")[-1].split(".")[0]
+
+    if config is not None:
+        run_name += f"_epo={config.epochs}"
+        run_name += f"_lr={config.learning_rate}"
+        run_name += f"_bs={config.batch_size}"
+        run_name += f"_mom={config.momentum}"
+        run_name += f"maxlen={config.max_length}"
+
+    with wandb.init(config=config, name=run_name):
         config = wandb.config
 
         logger.info("Starting classifier training")
@@ -42,7 +51,6 @@ def train_model(config=None):
         if config is not None:
             classifier_config.update(config)
             logger.info(f"Training configuration updated with sweep config: {classifier_config}")
-
 
         training_df = read_files_from_folder(args.dataset_path, file_ext=".csv")
 
