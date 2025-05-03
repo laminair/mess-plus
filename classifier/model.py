@@ -165,11 +165,11 @@ class MultilabelBERTClassifier:
         total_steps = len(train_loader) * epochs
         warmup_steps = int(total_steps * self.warmup_ratio)
 
-        scheduler = get_linear_schedule_with_warmup(
-            self.optimizer,
-            num_warmup_steps=warmup_steps,
-            num_training_steps=total_steps
-        )
+        # scheduler = get_linear_schedule_with_warmup(
+        #     self.optimizer,
+        #     num_warmup_steps=warmup_steps,
+        #     num_training_steps=total_steps
+        # )
 
         # Loss function for multi-label classification
         criterion = nn.BCEWithLogitsLoss()
@@ -197,7 +197,6 @@ class MultilabelBERTClassifier:
 
             # Initialize running statistics
             running_loss = 0.0
-
             for idx, batch in enumerate(progress_bar):
                 # Move batch to device
                 batch = {k: v.to(self.device) for k, v in batch.items()}
@@ -220,7 +219,7 @@ class MultilabelBERTClassifier:
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)  # Gradient clipping
                 self.optimizer.step()
-                scheduler.step()
+                # scheduler.step()
 
                 # Update statistics
                 batch_loss = loss.item()
@@ -242,7 +241,7 @@ class MultilabelBERTClassifier:
                     wandb.log({
                         "batch": idx + epoch * len(train_loader),
                         "batch_loss": batch_loss,
-                        "learning_rate": scheduler.get_last_lr()[0],
+                        "learning_rate": self.learning_rate,  # scheduler.get_last_lr()[0],
                         "running_loss": running_loss,
                     })
 
@@ -332,10 +331,6 @@ class MultilabelBERTClassifier:
                 "time/epoch_seconds": epoch_time
             }
 
-            if wandb.run is not None:
-                # We only log to W&B if initialized
-                wandb.log(metrics_dict)
-
             # Print per-label metrics if there are fewer than 10 labels
             if self.num_labels < 10:
                 per_label_f1 = f1_score(all_labels, all_preds, average=None, zero_division=0)
@@ -344,8 +339,21 @@ class MultilabelBERTClassifier:
 
                 logger.info("  Per-label metrics:")
                 for i in range(self.num_labels):
+                    metrics_dict.update({
+                        f"{i}_f1": per_label_f1[i],
+                        f"{i}_rec": per_label_precision[i],
+                        f"{i}_prec": per_label_recall[i]
+                    })
+
                     logger.info(
-                        f"    Label {i}: F1={per_label_f1[i]:.4f}, Prec={per_label_precision[i]:.4f}, Rec={per_label_recall[i]:.4f}")
+                        f"    Label {i}: F1={per_label_f1[i]:.4f}, "
+                        f"Prec={per_label_precision[i]:.4f}, "
+                        f"Rec={per_label_recall[i]:.4f}"
+                    )
+
+            if wandb.run is not None:
+                # We only log to W&B if initialized
+                wandb.log(metrics_dict)
 
             # Early stopping check
             if val_f1 > best_val_f1:

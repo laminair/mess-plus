@@ -24,7 +24,15 @@ FOLDER_PATH = Path(__file__).parent.absolute()
 print(FOLDER_PATH)
 
 
-def train_model(config_path: str, wandb_entity: str, wandb_project: str, wandb_run: str, dataset_path: str, *args, **kwargs):
+def train_model(
+        config_path: str,
+        wandb_entity: str,
+        wandb_project: str,
+        wandb_run: str,
+        dataset_path: str,
+        wandb_sweep_config = None
+    ):
+
     logger.info("Starting classifier training")
     benchmark_config_path = Path(config_path)
 
@@ -34,6 +42,11 @@ def train_model(config_path: str, wandb_entity: str, wandb_project: str, wandb_r
 
     f.close()
     logger.info(f"Configuration loaded from path {config_path}")
+
+    if wandb_sweep_config is not None:
+        classifier_config.update(wandb_sweep_config)
+        logger.info(f"Training configuration updated with sweep config: {classifier_config}")
+
 
     training_df = read_files_from_folder(dataset_path, file_ext=".csv")
 
@@ -99,10 +112,21 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
 
-    train_model(
-        config_path=args.config_path,
-        wandb_entity=args.wandb_entity,
-        wandb_project=args.wandb_project,
-        wandb_run=args.wandb_run,
-        dataset_path=args.dataset_path
+    with open(f"{FOLDER_PATH}/sweep_config.yaml", "r") as f:
+        sweep_config = yaml.safe_load(f)
+
+    f.close()
+
+    sweep_id = wandb.sweep(sweep_config, project=args.wandb_project, entity=args.wandb_entity)
+    wandb.agent(
+        sweep_id,
+        lambda x: train_model(
+            wandb_sweep_config=x,
+            config_path=args.config_path,
+            wandb_entity=args.wandb_entity,
+            wandb_project=args.wandb_project,
+            wandb_run=args.wandb_run,
+            dataset_path=args.dataset_path
+        ),
+        count=5
     )
