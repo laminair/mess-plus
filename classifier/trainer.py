@@ -125,5 +125,5 @@ if __name__ == "__main__":
     wandb.agent(
         sweep_id,
         train_model,
-        count=5
+        count=30,
     )
