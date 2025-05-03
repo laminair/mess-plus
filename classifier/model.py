@@ -480,6 +480,9 @@ class MultilabelBERTClassifier:
 
     def save_model(self, path):
         """Save the model, tokenizer and configuration."""
+
+        path = self.get_or_create_path(path)
+
         # Save model state dict
         torch.save({
             'model_state_dict': self.model.state_dict(),
@@ -552,6 +555,16 @@ class MultilabelBERTClassifier:
         else:
             # If the dataset returns tuples/lists
             raise ValueError("Expected dataset to return dictionaries")
+
+    @staticmethod
+    def get_or_create_path(path):
+        if not os.path.exists(path):
+            Path(path).mkdir(parents=True, exist_ok=True)
+            logger.info(f"Created directory {path}")
+        else:
+            logger.info(f"Directory {path} existis. Reusing...")
+
+        return path
 
 
 class ContinualMultilabelBERTClassifier(MultilabelBERTClassifier):
