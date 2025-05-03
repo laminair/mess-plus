@@ -308,8 +308,8 @@ class SampleGenerator:
             return self.make_winogrande_sample(doc_id, input_data, model_response_data, stage, benchmark_metric)
         elif "mmlu" in task.config.task.lower():
             return self.make_mmlu_sample(doc_id, input_data, model_response_data, stage, benchmark_metric, benchmark_name=task.config.task.lower())
-        elif "lambada" in task.config.task.lower():
-            return self.make_mmlu_sample(doc_id, input_data, model_response_data, stage, benchmark_metric, benchmark_name=task.config.task.lower())
+        # elif "lambada" in task.config.task.lower():
+        #     return self.make_mmlu_sample(doc_id, input_data, model_response_data, stage, benchmark_metric, benchmark_name=task.config.task.lower())
         else:
             # Default to get all relevant information when setting up a new benchmark.
             print("INPUT_DATA: ", input_data)
