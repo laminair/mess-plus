@@ -45,8 +45,8 @@ classifier_model:
   use_pretrained_classifier: true
   scoring_method: raw
   validation_dataset_size: 0.1
-  generate_training_dataset: true
-  write_training_dataset_to_disk: true
+  generate_training_dataset: false
+  write_training_dataset_to_disk: false
 
 algorithm:
   alpha: 0.75
