@@ -24,31 +24,24 @@ FOLDER_PATH = Path(__file__).parent.absolute()
 print(FOLDER_PATH)
 
 
-def train_model(
-        config_path: str,
-        wandb_entity: str,
-        wandb_project: str,
-        wandb_run: str,
-        dataset_path: str,
-        wandb_sweep_config = None
-    ):
+def train_model(config):
 
     logger.info("Starting classifier training")
-    benchmark_config_path = Path(config_path)
+    benchmark_config_path = Path(args.config_path)
 
     # Read and parse the YAML file
     with benchmark_config_path.open("r") as f:
         classifier_config = yaml.safe_load(f)["classifier_model"]
 
     f.close()
-    logger.info(f"Configuration loaded from path {config_path}")
+    logger.info(f"Configuration loaded from path {args.config_path}")
 
-    if wandb_sweep_config is not None:
-        classifier_config.update(wandb_sweep_config)
+    if config is not None:
+        classifier_config.update(config)
         logger.info(f"Training configuration updated with sweep config: {classifier_config}")
 
 
-    training_df = read_files_from_folder(dataset_path, file_ext=".csv")
+    training_df = read_files_from_folder(args.dataset_path, file_ext=".csv")
 
     text_col = ["input_text"]
     label_cols = ["label_small", "label_medium", "label_large"]
@@ -86,7 +79,7 @@ def train_model(
 
     logger.info(f"Model loaded and ready for training")
 
-    with wandb.init(entity=wandb_entity, project=wandb_project, name=wandb_run):
+    with wandb.init():
         # Train the model
         classifier.fit(train_dataset, val_dataset, epochs=classifier_config["epochs"], early_stopping_patience=2)
 
@@ -120,13 +113,6 @@ if __name__ == "__main__":
     sweep_id = wandb.sweep(sweep_config, project=args.wandb_project, entity=args.wandb_entity)
     wandb.agent(
         sweep_id,
-        lambda x: train_model(
-            wandb_sweep_config=x,
-            config_path=args.config_path,
-            wandb_entity=args.wandb_entity,
-            wandb_project=args.wandb_project,
-            wandb_run=args.wandb_run,
-            dataset_path=args.dataset_path
-        ),
+        train_model,
         count=5
     )
