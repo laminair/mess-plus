@@ -28,4 +28,4 @@ enroot start \
     --wandb-entity tum-i13 \
     --wandb-project mess-plus-classifier-training \
     --wandb-run social-iqa_lr=0.002_wd=0.01_mom=0.9_bs=16_seqlen=128_ \
-    --dataset-path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/data/inference_outputs/siqa
+    --dataset-path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/data/inference_outputs/social_iqa
