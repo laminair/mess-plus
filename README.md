@@ -21,12 +21,16 @@ You are good to go.
 
 ## Running MESS+ Experiments
 
-Pick a configuration file from the `config/messplus/` folder and run the following command:
+Pick a configuration file from the `config/` folder and run the following command:
 ```commandline
-VLLM_USE_V1=0 python3 mess_plus.py --config config/messplus/boolq.yaml --project-name mess-plus-benchmarks-v1
+VLLM_USE_V1=0 python3 mess_plus.py --config config/boolq.yaml --project-name mess-plus-benchmarks-v1
 ```
 You can provide a `--project-name` of your choice. 
 Make sure to check the GPU utilization settings and adjust them per your individual setup.
 
 **Important note:** vLLM's new memory management cannot load two models into the same GPU. Therefore, we need to use 
 `VLLM_USE_V1=0` to run experiments in a single-GPU environment.
+
+## Known issues
+The Zeus energy monitoring library sometimes recognizes CPUs to have RAPL capabilities withouth them actually having them. 
+This can lead to an error. To solve this, disable RAPL at startup and monitor the GPUs only.
