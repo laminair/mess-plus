@@ -38,7 +38,7 @@ def train_model(config_path: str, wandb_entity: str, wandb_project: str, wandb_r
     training_df = read_files_from_folder(dataset_path, file_ext=".csv")
 
     text_col = ["input_text"]
-    label_cols = ["label_small", "label_medium"]
+    label_cols = ["label_small", "label_medium", "label_large"]
 
     dataset = training_df[text_col + label_cols]
     dataset = preprocess_dataframe(dataset, label_cols=label_cols)
@@ -55,7 +55,7 @@ def train_model(config_path: str, wandb_entity: str, wandb_project: str, wandb_r
         val_ratio=classifier_config["validation_dataset_size"]
     )
 
-    logger.info(f"Dataset splits created. Training: {train_dataset.shape}, Validation: {val_dataset.shape} (rows, cols)")
+    logger.info(f"Dataset splits created. Rows - Training: {len(train_dataset)}, Validation: {len(val_dataset)}")
 
     classifier = MultilabelBERTClassifier(
         model_name=classifier_config["model_id"],  # Replace with your preferred BERT variant
