@@ -132,7 +132,7 @@ class SampleGenerator:
             "lambada_standard": "acc"
         }
 
-    def make_sample_inner(self, doc_id, input_text, model_response_data, stage, benchmark_name: str = "boolq"):
+    def make_sample_inner(self, doc_id, input_text, model_response_data, stage, benchmark_metric, benchmark_name: str = "boolq"):
 
         # Create a dictionary to hold our data
         data = {
@@ -142,12 +142,11 @@ class SampleGenerator:
         }
 
         if stage == "train" and model_response_data is not None:
-            metric_name = self.benchmark_metrics_mapping[benchmark_name]
             for model_category in model_response_data.keys():
                 data.update({
                     f"benchmark_name": benchmark_name,
-                    f"label_{model_category}": model_response_data[model_category][metric_name],
-                    f"{metric_name}_{model_category}": model_response_data[model_category][metric_name],
+                    f"label_{model_category}": model_response_data[model_category][benchmark_metric],
+                    f"{benchmark_metric}_{model_category}": model_response_data[model_category][benchmark_metric],
                     f"energy_consumption_{model_category}": model_response_data[model_category]["energy_consumption"],
                     f"inference_time_{model_category}": model_response_data[model_category]["inference_time"],
                 })
@@ -155,137 +154,162 @@ class SampleGenerator:
         # Create and return the DataFrame
         return pd.DataFrame([data])
 
-    def make_boolq_sample(self, doc_id, input_data, model_response_data, stage):
+    def make_boolq_sample(self, doc_id, input_data, model_response_data, stage, benchmark_metric):
 
         return self.make_sample_inner(
             doc_id,
             input_text=f"{input_data['question']}",
             model_response_data=model_response_data,
             stage=stage,
-            benchmark_name="boolq")
+            benchmark_name="boolq",
+            benchmark_metric=benchmark_metric,
+        )
 
-    def make_piqa_sample(self, doc_id, input_data, model_response_data, stage):
+    def make_piqa_sample(self, doc_id, input_data, model_response_data, stage, benchmark_metric):
         return self.make_sample_inner(
             doc_id,
             input_text=f"{input_data['goal']}",
             model_response_data=model_response_data,
             stage=stage,
-            benchmark_name="piqa")
+            benchmark_name="piqa",
+            benchmark_metric=benchmark_metric
+        )
 
-    def make_logiqa_sample(self, doc_id, input_data, model_response_data, stage):
+    def make_logiqa_sample(self, doc_id, input_data, model_response_data, stage, benchmark_metric):
         return self.make_sample_inner(
             doc_id,
             input_text=f"{input_data['question']}",
             model_response_data=model_response_data,
             stage=stage,
-            benchmark_name="logiqa")
+            benchmark_name="logiqa",
+            benchmark_metric=benchmark_metric
+        )
 
-    def make_logiqa2_sample(self, doc_id, input_data, model_response_data, stage):
+    def make_logiqa2_sample(self, doc_id, input_data, model_response_data, stage, benchmark_metric):
         return self.make_sample_inner(
             doc_id,
             input_text=f"{input_data['question']}",
             model_response_data=model_response_data,
             stage=stage,
-            benchmark_name="logiqa2")
+            benchmark_name="logiqa2",
+            benchmark_metric=benchmark_metric
+        )
 
-    def make_socialiqa_sample(self, doc_id, input_data, model_response_data, stage):
+    def make_socialiqa_sample(self, doc_id, input_data, model_response_data, stage, benchmark_metric):
         return self.make_sample_inner(
             doc_id,
             input_text=f"{input_data['context']}{input_data['question']}",
             model_response_data=model_response_data,
             stage=stage,
-            benchmark_name="social_iqa")
+            benchmark_name="social_iqa",
+            benchmark_metric=benchmark_metric
+        )
 
-    def make_triviaqa_sample(self, doc_id, input_data, model_response_data, stage):
+    def make_triviaqa_sample(self, doc_id, input_data, model_response_data, stage, benchmark_metric):
         return self.make_sample_inner(
             doc_id,
             input_text=f"{input_data['question']}",
             model_response_data=model_response_data,
             stage=stage,
-            benchmark_name="triviaqa")
+            benchmark_name="triviaqa",
+            benchmark_metric=benchmark_metric
+        )
 
-    def make_sciq_sample(self, doc_id, input_data, model_response_data, stage):
+    def make_sciq_sample(self, doc_id, input_data, model_response_data, stage, benchmark_metric):
         return self.make_sample_inner(
             doc_id,
             input_text=f"{input_data['question']}",
             model_response_data=model_response_data,
             stage=stage,
-            benchmark_name="sciq")
+            benchmark_name="sciq",
+            benchmark_metric=benchmark_metric
+        )
 
-    def make_arc_easy_sample(self, doc_id, input_data, model_response_data, stage):
+    def make_arc_easy_sample(self, doc_id, input_data, model_response_data, stage, benchmark_metric):
         return self.make_sample_inner(
             doc_id,
             input_text=f"{input_data['question']}",
             model_response_data=model_response_data,
             stage=stage,
-            benchmark_name="arc_easy")
+            benchmark_name="arc_easy",
+            benchmark_metric=benchmark_metric
+        )
 
-    def make_arc_challenge_sample(self, doc_id, input_data, model_response_data, stage):
+    def make_arc_challenge_sample(self, doc_id, input_data, model_response_data, stage, benchmark_metric):
         return self.make_sample_inner(
             doc_id,
             input_text=f"{input_data['question']}",
             model_response_data=model_response_data,
             stage=stage,
-            benchmark_name="arc_challenge")
+            benchmark_name="arc_challenge",
+            benchmark_metric=benchmark_metric
+        )
 
-    def make_winogrande_sample(self, doc_id, input_data, model_response_data, stage):
+    def make_winogrande_sample(self, doc_id, input_data, model_response_data, stage, benchmark_metric):
         return self.make_sample_inner(
             doc_id,
             input_text=f"{input_data['sentence']}",
             model_response_data=model_response_data,
             stage=stage,
-            benchmark_name="winogrande")
+            benchmark_name="winogrande",
+            benchmark_metric=benchmark_metric
+        )
 
-    def make_mmlu_sample(self, doc_id, input_data, model_response_data, stage, benchmark_name):
+    def make_mmlu_sample(self, doc_id, input_data, model_response_data, stage, benchmark_metric, benchmark_name):
         # TODO: We may want to include the subject at some point for improved embeddings.
         return self.make_sample_inner(
             doc_id,
             input_text=f"{input_data['question']}",
             model_response_data=model_response_data,
             stage=stage,
-            benchmark_name=benchmark_name)
+            benchmark_name=benchmark_name,
+            benchmark_metric=benchmark_metric
+        )
 
-    def make_lambada_sample(self, doc_id, input_data, model_response_data, stage, benchmark_name):
+    def make_lambada_sample(self, doc_id, input_data, model_response_data, stage, benchmark_metric, benchmark_name):
         return self.make_sample_inner(
             doc_id,
             input_text=f"{input_data['text']}",
             model_response_data=model_response_data,
             stage=stage,
-            benchmark_name=benchmark_name)
+            benchmark_name=benchmark_name,
+            benchmark_metric=benchmark_metric
+        )
 
     def make_sample(
         self,
         doc_id: int,
         input_data: dict,
+        benchmark_metric: str,
         task: Task,
         model_response_data: dict = None,
         stage: str = "train"
     ):
 
         if task.config.task.lower() == "boolq":
-            return self.make_boolq_sample(doc_id, input_data, model_response_data, stage)
+            return self.make_boolq_sample(doc_id, input_data, model_response_data, stage, benchmark_metric)
         elif task.config.task.lower() == "piqa":
-            return self.make_piqa_sample(doc_id, input_data, model_response_data, stage)
+            return self.make_piqa_sample(doc_id, input_data, model_response_data, stage, benchmark_metric)
         elif task.config.task.lower() == "logiqa":
-            return self.make_logiqa_sample(doc_id, input_data, model_response_data, stage)
+            return self.make_logiqa_sample(doc_id, input_data, model_response_data, stage, benchmark_metric)
         elif task.config.task.lower() == "logiqa2":
-            return self.make_logiqa_sample(doc_id, input_data, model_response_data, stage)
+            return self.make_logiqa_sample(doc_id, input_data, model_response_data, stage, benchmark_metric)
         elif task.config.task.lower() == "social_iqa":
-            return self.make_socialiqa_sample(doc_id, input_data, model_response_data, stage)
+            return self.make_socialiqa_sample(doc_id, input_data, model_response_data, stage, benchmark_metric)
         elif task.config.task.lower() == "triviaqa":
-            return self.make_triviaqa_sample(doc_id, input_data, model_response_data, stage)
+            return self.make_triviaqa_sample(doc_id, input_data, model_response_data, stage, benchmark_metric)
         elif task.config.task.lower() == "sciq":
-            return self.make_sciq_sample(doc_id, input_data, model_response_data, stage)
+            return self.make_sciq_sample(doc_id, input_data, model_response_data, stage, benchmark_metric)
         elif task.config.task.lower() == "arc_easy":
-            return self.make_arc_easy_sample(doc_id, input_data, model_response_data, stage)
+            return self.make_arc_easy_sample(doc_id, input_data, model_response_data, stage, benchmark_metric)
         elif task.config.task.lower() == "arc_challenge":
-            return self.make_arc_challenge_sample(doc_id, input_data, model_response_data, stage)
+            return self.make_arc_challenge_sample(doc_id, input_data, model_response_data, stage, benchmark_metric)
         elif task.config.task.lower() == "winogrande":
-            return self.make_winogrande_sample(doc_id, input_data, model_response_data, stage)
+            return self.make_winogrande_sample(doc_id, input_data, model_response_data, stage, benchmark_metric)
         elif "mmlu" in task.config.task.lower():
-            return self.make_mmlu_sample(doc_id, input_data, model_response_data, stage, benchmark_name=task.config.task.lower())
+            return self.make_mmlu_sample(doc_id, input_data, model_response_data, stage, benchmark_metric, benchmark_name=task.config.task.lower())
         elif "lambada" in task.config.task.lower():
-            return self.make_mmlu_sample(doc_id, input_data, model_response_data, stage, benchmark_name=task.config.task.lower())
+            return self.make_mmlu_sample(doc_id, input_data, model_response_data, stage, benchmark_metric, benchmark_name=task.config.task.lower())
         else:
             # Default to get all relevant information when setting up a new benchmark.
             print("INPUT_DATA: ", input_data)

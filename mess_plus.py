@@ -321,6 +321,15 @@ class MessPlusAutomaticModelSelector(object):
                 # We initialize one classifier model for every benchmark
                 self.__warmup_classifier_model()
                 model_categories = [i for i in self.vllm_models.keys()]
+
+                try:
+                    benchmark_metric = self.sample_generator.benchmark_metrics_mapping[task.config.task.lower()]
+                except KeyError:
+                    bm_keys = [i for i in self.sample_generator.benchmark_metrics_mapping.keys()]
+                    matching_items = [bm_name for bm_name in bm_keys if bm_name in task.config.task.lower()]
+                    # Take the first matching item
+                    benchmark_metric = self.sample_generator.benchmark_metrics_mapping[matching_items[0]]
+
                 for timestamp, (doc_id, request_list) in enumerate(benchmark_documents_by_id.items()):
                     x_t = self.__sample_from_bernoulli(c=self.algorithm_config["c"], timestamp=timestamp)
 
@@ -329,7 +338,8 @@ class MessPlusAutomaticModelSelector(object):
                         updated_requests, result_scores, training_sample = self.__get_training_sample(
                             request_list=request_list,
                             task=task,
-                            doc_id=doc_id
+                            doc_id=doc_id,
+                            benchmark_metric=benchmark_metric
                         )
 
                         if self.classifier_config["write_training_dataset_to_disk"]:
@@ -383,10 +393,7 @@ class MessPlusAutomaticModelSelector(object):
                         )
 
                         instances_to_propagate = result["updated_requests"]
-                        # TODO: The dict key at this point may have a different name for different benchmarks!
-                        result_score = result[
-                            self.sample_generator.benchmark_metrics_mapping[task.config.task.lower()]
-                        ]
+                        result_score = result[benchmark_metric]
 
                     for instance in instances_to_propagate:
                         instances_by_doc_id[doc_id].append(instance)
@@ -695,7 +702,7 @@ class MessPlusAutomaticModelSelector(object):
 
         return adjusted_task_dict
 
-    def __get_training_sample(self, request_list: List[Instance], doc_id: int, task: Task) -> tuple[dict[Any, Any], dict[Any, Any], Any]:
+    def __get_training_sample(self, request_list: List[Instance], doc_id: int, task: Task, benchmark_metric: str) -> tuple[dict[Any, Any], dict[Any, Any], Any]:
         outputs = {i: dict() for i in self.vllm_models.keys()}
         selected_doc = request_list[0].doc
 
@@ -706,22 +713,21 @@ class MessPlusAutomaticModelSelector(object):
                 model_category=model_category,
                 doc_id=doc_id,
                 task=task,
-                selected_doc=selected_doc,
+                selected_doc=selected_doc
             )
 
         sample = self.sample_generator.make_sample(
             doc_id=doc_id,
             input_data=selected_doc,
             model_response_data=outputs,
+            benchmark_metric=benchmark_metric,
             task=task,
             stage="train"
         )
 
         updated_inference_requests = {model_category: data["updated_requests"] for model_category, data in outputs.items()}
         result_scores = {
-            model_category: data[
-                self.sample_generator.benchmark_metrics_mapping[task.config.task.lower()]
-            ] for model_category, data in outputs.items()
+            model_category: data[benchmark_metric] for model_category, data in outputs.items()
         }
         return updated_inference_requests, result_scores, sample
 
