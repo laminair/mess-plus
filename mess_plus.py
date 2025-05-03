@@ -585,7 +585,7 @@ class MessPlusAutomaticModelSelector(object):
             f"Classifier model loaded onto device: {self.classifier_device}."
         )
 
-        if self.classifier_config["use_pretrained_classifier"] is True:
+        if self.classifier_config["use_pretrained_classifier"] is True and self.classifier_config["generate_training_dataset"] is False:
             self.mess_classifier.load_model(path=f"{PROJECT_ROOT_PATH}/{self.classifier_config['checkpoint_path']}")
             logger.info(
                 f"Using pre-trained classifier available under path "
