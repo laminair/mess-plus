@@ -1,15 +1,13 @@
 import logging
-import os
 import wandb
 import yaml
 import argparse
 
 from pathlib import Path
-from torch.utils.data import DataLoader
 
-from classifier.file_reader import read_files_from_folder
-from classifier.dataset import BertPandasDataset, collate_fn, create_bert_datasets, preprocess_dataframe
-from classifier.model import ContinualMultilabelBERTClassifier, MultilabelBERTClassifier
+from file_reader import read_files_from_folder
+from dataset import create_bert_datasets, preprocess_dataframe
+from model import MultilabelBERTClassifier
 
 
 logger = logging.getLogger(__name__)
