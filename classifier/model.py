@@ -352,6 +352,7 @@ class MultilabelBERTClassifier:
                 best_val_f1 = val_f1
                 patience_counter = 0
                 # Save the best model
+                self.get_or_create_path(self.config['checkpoint_path'])
                 self.save_model(f"{self.config['checkpoint_path']}/messplus_classifier.pt")
                 logger.info("Best model saved")
             else:
@@ -480,9 +481,6 @@ class MultilabelBERTClassifier:
 
     def save_model(self, path):
         """Save the model, tokenizer and configuration."""
-
-        path = self.get_or_create_path(path)
-
         # Save model state dict
         torch.save({
             'model_state_dict': self.model.state_dict(),
