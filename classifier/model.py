@@ -135,6 +135,13 @@ class MultilabelBERTClassifier:
         # Config for MESS+
         self.config = config
 
+        # Process checkpoint path.
+        checkpoint_pth = self.config['checkpoint_path']
+
+        if not checkpoint_pth.startswith("/"):
+            checkpoint_pth = f"{FILE_FOLDER_PATH}/{checkpoint_pth}"
+            self.config['checkpoint_path'] = checkpoint_pth
+
     def fit(self, train_dataset, val_dataset, epochs=5, early_stopping_patience=3):
         """Train the model with early stopping based on validation performance."""
         # Load the model if not already done
@@ -345,13 +352,13 @@ class MultilabelBERTClassifier:
                 best_val_f1 = val_f1
                 patience_counter = 0
                 # Save the best model
-                self.save_model(f"{FILE_FOLDER_PATH}/checkpoints/mess_classifier_best_ckpt.pt")
-                logger.info("  ✓ Best model saved!")
+                self.save_model(f"{self.config['checkpoint_path']}/messplus_classifier.pt")
+                logger.info("Best model saved")
             else:
                 patience_counter += 1
-                logger.info(f"  ✗ No improvement: {patience_counter}/{early_stopping_patience}")
+                logger.warning(f"No improvement: {patience_counter}/{early_stopping_patience}")
                 if patience_counter >= early_stopping_patience:
-                    logger.info("Early stopping triggered!")
+                    logger.warning("Early stopping triggered!")
                     break
 
         # Load the best model for inference
@@ -489,7 +496,7 @@ class MultilabelBERTClassifier:
 
     def load_model(self, path):
         """Load the model from the given path."""
-        checkpoint = torch.load(path, map_location=self.device)
+        checkpoint = torch.load(f"{self.config['checkpoint_path']}/messplus_classifier.pt", map_location=self.device)
         # Update configuration
         config = checkpoint['config']
         self.model_name = config['model_name']
@@ -516,8 +523,8 @@ class MultilabelBERTClassifier:
         self.model.to(self.device)
 
         # Load tokenizer if saved
-        if hasattr(self, 'tokenizer') and os.path.exists(f"{FILE_FOLDER_PATH}/checkpoints/{path}_tokenizer"):
-            self.tokenizer = AutoTokenizer.from_pretrained(f"{FILE_FOLDER_PATH}/checkpoints/{path}_tokenizer")
+        if hasattr(self, 'tokenizer') and os.path.exists(f"{self.config['checkpoint_path']}/messplus_classifier.pt_tokenizer"):
+            self.tokenizer = AutoTokenizer.from_pretrained(f"{self.config['checkpoint_path']}/messplus_classifier.pt_tokenizer")
 
         return self
 
