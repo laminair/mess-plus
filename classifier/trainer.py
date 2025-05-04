@@ -29,24 +29,26 @@ def train_model(config=None):
     run_name = args.config_path.split("/")[-1].split(".")[0]
 
     if config is not None:
-        run_name += f"_epo={config.epochs}"
-        run_name += f"_lr={config.learning_rate}"
-        run_name += f"_bs={config.batch_size}"
-        run_name += f"_mom={config.momentum}"
-        run_name += f"maxlen={config.max_length}"
+        run_name += f"_epo={config['epochs']}"
+        run_name += f"_lr={config['learning_rate']}"
+        run_name += f"_bs={config['batch_size']}"
+        run_name += f"_mom={config['momentum']}"
+        run_name += f"maxlen={config['max_length']}"
 
     with wandb.init(config=config, name=run_name):
         config = wandb.config
 
         logger.info("Starting classifier training")
-        benchmark_config_path = Path(args.config_path)
 
-        # Read and parse the YAML file
-        with benchmark_config_path.open("r") as f:
-            classifier_config = yaml.safe_load(f)["classifier_model"]
+        if args.sweep is True:
+            benchmark_config_path = Path(args.config_path)
 
-        f.close()
-        logger.info(f"Configuration loaded from path {args.config_path}")
+            # Read and parse the YAML file
+            with benchmark_config_path.open("r") as f:
+                classifier_config = yaml.safe_load(f)["classifier_model"]
+
+            f.close()
+            logger.info(f"Configuration loaded from path {args.config_path}")
 
         if config is not None:
             classifier_config.update(config)
@@ -106,24 +108,38 @@ def parse_args():
                         help='W&B entity name')
     parser.add_argument('--wandb-project', type=str, required=True,
                         help='W&B project name')
-    parser.add_argument('--wandb-run', type=str, required=True,
-                        help='W&B run name')
     parser.add_argument('--dataset-path', type=str, required=True,
                         help='Path to dataset')
+    parser.add_argument('--sweep', type=bool, required=True, default=False,
+                        help='Whether to do a hyperparameter sweep')
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
 
-    with open(f"{FOLDER_PATH}/sweep_config.yaml", "r") as f:
-        sweep_config = yaml.safe_load(f)
 
-    f.close()
+    if args.sweep is True:
+        logger.info(f"Running a hyperparameter sweep.")
+        with open(f"{FOLDER_PATH}/sweep_config.yaml", "r") as f:
+            sweep_config = yaml.safe_load(f)
 
-    sweep_id = wandb.sweep(sweep_config, project=args.wandb_project, entity=args.wandb_entity)
-    wandb.agent(
-        sweep_id,
-        train_model,
-        count=30,
-    )
+        f.close()
+
+        sweep_id = wandb.sweep(sweep_config, project=args.wandb_project, entity=args.wandb_entity)
+        wandb.agent(
+            sweep_id,
+            train_model,
+            count=30,
+        )
+    else:
+        logger.info(f"Training a classifier with hyperparameters provided in {args.config_path}")
+        benchmark_config_path = Path(args.config_path)
+
+        # Read and parse the YAML file
+        with benchmark_config_path.open("r") as f:
+            classifier_config = yaml.safe_load(f)["classifier_model"]
+
+        f.close()
+
+        train_model(config=classifier_config)

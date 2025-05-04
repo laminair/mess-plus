@@ -24,8 +24,7 @@ enroot start \
     --mount /usr/share/ \
     messplus \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/python /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/classifier/trainer.py \
-    --config-path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/config/arc_easy.yaml \
+    --config-path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/config/siqa.yaml \
     --wandb-entity tum-i13 \
     --wandb-project mess-plus-classifier-training \
-    --wandb-run arc_easy_lr=0.002_wd=0.01_mom=0.9_bs=16_seqlen=128_ \
-    --dataset-path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/data/inference_outputs/arc_easy
+    --dataset-path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/data/inference_outputs/social_iqa

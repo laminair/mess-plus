@@ -19,7 +19,7 @@ sleep 1
 sbatch siqa.sbatch
 sleep 1
 # sbatch triviaqa.sbatch
-sleep 1
+# sleep 1
 sbatch winogrande.sbatch
 sleep 1
 # sbatch mmlu.sbatch
