@@ -111,7 +111,9 @@ class MultilabelBERTClassifier:
             dropout_rate=0.1,
             freeze_bert_layers=False,
             device=None,
-            config: dict = None,
+            checkpoint_path=None,
+            disable_tqdm=False,
+            **kwargs
     ):
         self.model_name = model_name
         self.num_labels = num_labels
@@ -133,14 +135,13 @@ class MultilabelBERTClassifier:
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
         # Config for MESS+
-        self.config = config
+        # self.config = config
 
-        # Process checkpoint path.
-        checkpoint_pth = self.config['checkpoint_path']
-
-        if not checkpoint_pth.startswith("/"):
-            checkpoint_pth = f"{FILE_FOLDER_PATH}/{checkpoint_pth}"
-            self.config['checkpoint_path'] = checkpoint_pth
+        self.disable_tqdm = disable_tqdm
+        self.checkpoint_path = checkpoint_path
+        if not self.checkpoint_path.startswith("/"):
+            checkpoint_pth = f"{FILE_FOLDER_PATH}/{self.checkpoint_path}"
+            self.checkpoint_path = checkpoint_pth
 
     def fit(self, train_dataset, val_dataset, epochs=5, early_stopping_patience=3):
         """Train the model with early stopping based on validation performance."""
@@ -192,7 +193,7 @@ class MultilabelBERTClassifier:
                 desc=f"Epoch {epoch + 1}/{epochs} [Training]",
                 leave=True,
                 position=0,
-                disable=self.config["disable_tqdm"]
+                disable=self.disable_tqdm
             )
 
             # Initialize running statistics
@@ -260,7 +261,7 @@ class MultilabelBERTClassifier:
                 desc=f"Epoch {epoch + 1}/{epochs} [Validation]",
                 leave=True,
                 position=0,
-                disable=self.config["disable_tqdm"]
+                disable=self.disable_tqdm
 
             )
 
@@ -360,8 +361,8 @@ class MultilabelBERTClassifier:
                 best_val_f1 = val_f1
                 patience_counter = 0
                 # Save the best model
-                self.get_or_create_path(self.config['checkpoint_path'])
-                self.save_model(f"{self.config['checkpoint_path']}/messplus_classifier.pt")
+                self.get_or_create_path(self.checkpoint_path)
+                self.save_model(f"{self.checkpoint_path}/messplus_classifier.pt")
                 logger.info("Best model saved")
             else:
                 patience_counter += 1
@@ -383,7 +384,7 @@ class MultilabelBERTClassifier:
         all_labels = []
 
         with torch.no_grad():
-            for batch in tqdm(data_loader, desc="Evaluating", disable=self.config["disable_tqdm"]):
+            for batch in tqdm(data_loader, desc="Evaluating", disable=self.disable_tqdm):
                 # Move batch to device
                 batch = {k: v.to(self.device) for k, v in batch.items()}
 
@@ -450,7 +451,7 @@ class MultilabelBERTClassifier:
 
         return predictions, probs
 
-    def make_model_if_not_exists(self, train_dataset):
+    def make_model_if_not_exists(self, train_dataset=None):
         if not hasattr(self, 'model'):
             if self.num_labels is None:
                 # Infer from the dataset
@@ -505,7 +506,7 @@ class MultilabelBERTClassifier:
 
     def load_model(self, path):
         """Load the model from the given path."""
-        checkpoint = torch.load(f"{self.config['checkpoint_path']}/messplus_classifier.pt", map_location=self.device)
+        checkpoint = torch.load(f"{self.checkpoint_path}/messplus_classifier.pt", map_location=self.device)
         # Update configuration
         config = checkpoint['config']
         self.model_name = config['model_name']
@@ -532,8 +533,8 @@ class MultilabelBERTClassifier:
         self.model.to(self.device)
 
         # Load tokenizer if saved
-        if hasattr(self, 'tokenizer') and os.path.exists(f"{self.config['checkpoint_path']}/messplus_classifier.pt_tokenizer"):
-            self.tokenizer = AutoTokenizer.from_pretrained(f"{self.config['checkpoint_path']}/messplus_classifier.pt_tokenizer")
+        if hasattr(self, 'tokenizer') and os.path.exists(f"{self.checkpoint_path}/messplus_classifier.pt_tokenizer"):
+            self.tokenizer = AutoTokenizer.from_pretrained(f"{self.checkpoint_path}/messplus_classifier.pt_tokenizer")
 
         return self
 
@@ -769,7 +770,7 @@ class ContinualMultilabelBERTClassifier(MultilabelBERTClassifier):
             for batch in tqdm(
                 train_loader,
                 desc=f"Epoch {epoch + 1}/{epochs} [Training]",
-                disable=self.config["disable_tqdm"]
+                disable=self.disable_tqdm
             ):
                 # Move batch to device
                 batch = {k: v.to(self.device) for k, v in batch.items()}
