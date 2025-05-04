@@ -110,7 +110,7 @@ def parse_args():
                         help='W&B project name')
     parser.add_argument('--dataset-path', type=str, required=True,
                         help='Path to dataset')
-    parser.add_argument('--sweep', type=bool, required=True, default=False,
+    parser.add_argument('--sweep', default=False, action="store_true",
                         help='Whether to do a hyperparameter sweep')
     return parser.parse_args()
 
