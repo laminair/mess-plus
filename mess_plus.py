@@ -13,7 +13,6 @@ import numpy as np
 import wandb
 import yaml
 
-from numpy.random import binomial
 from pathlib import Path
 from vllm.distributed.parallel_state import destroy_model_parallel, destroy_distributed_environment
 
@@ -33,6 +32,7 @@ from lm_eval.api.task import Instance
 from utils import is_nested_list
 from utils.data_capturing import StreamingDataProcessor, SampleGenerator
 from utils.mess_lm_eval_harness.vllm_v2 import MessLMEvalVLLM
+from utils.mess_plus import sample_from_bernoulli
 from classifier.model import ContinualMultilabelBERTClassifier
 from classifier.dataset import BertPandasDataset
 from classifier.score_estimation import RoutingScoreEstimator
@@ -61,7 +61,7 @@ torch.set_float32_matmul_precision('high')
 datasets.config.HF_DATASETS_TRUST_REMOTE_CODE = True
 
 
-class MessPlusAutomaticModelSelector(object):
+class MessPlusAutomaticModelSelector:
 
     def __init__(self, config_file_path: str, project_name: str, wandb_entity: str = None):
         self.config = yaml.safe_load(open(config_file_path, "r"))
@@ -331,7 +331,10 @@ class MessPlusAutomaticModelSelector(object):
                     benchmark_metric = self.sample_generator.benchmark_metrics_mapping[matching_items[0]]
 
                 for timestamp, (doc_id, request_list) in enumerate(benchmark_documents_by_id.items()):
-                    x_t = self.__sample_from_bernoulli(c=self.algorithm_config["c"], timestamp=timestamp)
+                    x_t = self.__get_decision_variable_for_exploration_or_exploitation(
+                        c=self.algorithm_config["c"],
+                        timestamp=timestamp
+                    )
 
                     if x_t == 1 or self.classifier_config["generate_training_dataset"]:
                         logger.info(f"Running request #{timestamp} - Training")
@@ -515,20 +518,16 @@ class MessPlusAutomaticModelSelector(object):
 
         return results
 
-    def __sample_from_bernoulli(self, c: float, timestamp: int):
+    def __get_decision_variable_for_exploration_or_exploitation(self, c: float, timestamp: int):
 
-        p_t = min(
-            1.0, c / np.power(1 if timestamp == 0 else timestamp, (1/5))
-        )
-
-        x_t = binomial(n=1, p=p_t, size=1)
+        p_t, x_t = sample_from_bernoulli(c, timestamp)
 
         self.wandb_run.log({
             "p_t": p_t,
             "x_t": x_t
         }, step=timestamp)
 
-        return x_t.item()
+        return x_t
 
     def __warm_up_inference_models(self):
         self.vllm_models = {}

@@ -40,7 +40,7 @@ classifier_model:
   regularization_lambda: 0.0
   gpu_index: 0
   disable_tqdm: false
-  # Path uses the "classifier" folder as root. Alternatively you can specify an absolute path.
+  # Path uses the "classifier" folder as root. Alternatively, you can specify an absolute path.
   checkpoint_path: "checkpoints/boolq"
   use_pretrained_classifier: true
   scoring_method: raw
@@ -49,9 +49,12 @@ classifier_model:
   write_training_dataset_to_disk: false
 
 algorithm:
-  alpha: 0.75
-  c: 1
-  V: 0.01
+  # The following three have an effect only when using "mess_plus.py".
+  alpha: 0.65
+  c: 0.1
+  V: 100000
+  # We use the values below to simulate different thresholds. Use "alpha" above for a dedicated run in "mess_plus.py".
+  sim_alpha_values: [0.7, 0.75, 0.8, 0.85, 0.88]
 
 lm_eval:
   # The run name will be the first benchmark in the list below.

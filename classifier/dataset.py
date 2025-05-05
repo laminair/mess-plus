@@ -29,11 +29,26 @@ class BertPandasDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
 
         if self.input_type == "df":
-            text = self.dataframe.iloc[idx][self.text_col].values
-            labels = self.dataframe.iloc[idx][self.y_cols].values
+            try:
+                text = self.dataframe.iloc[idx][self.text_col].values
+            except AttributeError:
+                text = self.dataframe.iloc[idx][self.text_col]
+
+            try:
+                labels = self.dataframe.iloc[idx][self.y_cols].values
+            except AttributeError:
+                labels = self.dataframe.iloc[idx][self.y_cols]
+
         elif self.input_type == "series":
-            text = self.dataframe[self.text_col].values
-            labels = self.dataframe[self.y_cols].values
+            try:
+                text = self.dataframe[self.text_col].values
+            except AttributeError:
+                text = self.dataframe[self.text_col]
+
+            try:
+                labels = self.dataframe[self.y_cols].values
+            except AttributeError:
+                labels = self.dataframe[self.y_cols]
         else:
             raise NotImplementedError("Handler for data type not implemented.")
 

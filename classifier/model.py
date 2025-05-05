@@ -179,6 +179,7 @@ class MultilabelBERTClassifier:
         best_val_f1 = 0
         patience_counter = 0
 
+        metrics_dict = {}
         for epoch in range(epochs):
             start_time = time.time()
 
@@ -319,7 +320,7 @@ class MultilabelBERTClassifier:
             # logger.info(f"  Val Metrics - Precision: {val_precision:.4f}, Recall: {val_recall:.4f}")
 
             # Log epoch metrics
-            metrics_dict = {
+            metrics_dict.update({
                 "epoch": epoch + 1,
                 "train/loss": avg_train_loss,
                 "val/loss": avg_val_loss,
@@ -330,7 +331,7 @@ class MultilabelBERTClassifier:
                 "val/f1_macro": val_f1_macro,
                 # "val/f1_weighted": val_f1_weighted,
                 "time/epoch_seconds": epoch_time
-            }
+            })
 
             # Print per-label metrics if there are fewer than 10 labels
             if self.num_labels < 10:
@@ -341,9 +342,9 @@ class MultilabelBERTClassifier:
                 logger.info("  Per-label metrics:")
                 for i in range(self.num_labels):
                     metrics_dict.update({
-                        f"{i}_f1": per_label_f1[i],
-                        f"{i}_rec": per_label_precision[i],
-                        f"{i}_prec": per_label_recall[i]
+                        f"val/{i}_f1score": per_label_f1[i],
+                        f"val/{i}_recall": per_label_precision[i],
+                        f"val/{i}_precision": per_label_recall[i]
                     })
 
                     logger.info(
@@ -371,9 +372,7 @@ class MultilabelBERTClassifier:
                     logger.warning("Early stopping triggered!")
                     break
 
-        # Load the best model for inference
-        # self.load_model("best_model.pt")
-        # return self
+        return metrics_dict
 
     def evaluate(self, data_loader):
         """Evaluate the model on the given data loader."""
