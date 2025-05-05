@@ -49,6 +49,7 @@ classifier_model:
   write_training_dataset_to_disk: false
 
 algorithm:
+  alpha_values: [0.95, 0.96, 0.97]
   alpha: 0.75
   c: 1
   V: 0.01
