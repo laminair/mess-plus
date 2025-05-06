@@ -1,20 +1,20 @@
 #!/bin/bash
 
-sbatch arc_challenge.sbatch
+# sbatch arc_challenge.sbatch
 sleep 1
-sbatch arc_easy.sbatch
+# sbatch arc_easy.sbatch
 sleep 1
 sbatch boolq.sbatch
 sleep 1
 sbatch lambada_standard.sbatch
 sleep 1
-sbatch logiqa.sbatch
+# sbatch logiqa.sbatch
 sleep 1
 sbatch logiqa2.sbatch
 sleep 1
-sbatch piqa.sbatch
+# sbatch piqa.sbatch
 sleep 1
-sbatch sciq.sbatch
+# sbatch sciq.sbatch
 sleep 1
 sbatch social_iqa.sbatch
 sleep 1
