@@ -29,6 +29,7 @@ logging.basicConfig(
 PROJECT_ROOT_PATH = Path(__file__).parent
 SEEDS = [42, 43, 44]
 NUM_PRETRAINING_STEPS = 400
+NUM_CLASSIFIER_LABELS = 3
 
 
 def simulate(args):
@@ -61,7 +62,7 @@ def simulate(args):
         text_col = "input_text"
         label_cols = ["label_small", "label_medium", "label_large"]
 
-        classifier = MultilabelBERTClassifier(num_labels=3, **CONFIG["classifier_model"])
+        classifier = MultilabelBERTClassifier(num_labels=NUM_CLASSIFIER_LABELS, **CONFIG["classifier_model"])
         training_df = input_df.loc[:NUM_PRETRAINING_STEPS]
         training_df = preprocess_dataframe(training_df, label_cols=label_cols)
 
@@ -72,11 +73,12 @@ def simulate(args):
             model_name=CONFIG["classifier_model"]["model_id"],
             max_length=CONFIG["classifier_model"]["max_length"],
             val_ratio=CONFIG["classifier_model"]["validation_dataset_size"],
-            random_seed=seed,
+            random_seed=seed
         )
 
         training_stats = classifier.fit(
-            train_dataset, val_dataset,
+            train_dataset,
+            val_dataset,
             epochs=CONFIG["classifier_model"]["epochs"],
             early_stopping_patience=2
         )
@@ -91,9 +93,9 @@ def simulate(args):
 
         sample_cols = input_df.columns.tolist()
 
-        ALPHA_VALUES = algorithm_config["sim_alpha_values"]
-        C_VALUES = [0.01, 0.1, 0.5, 1.0, 2.0, 10.0]
-        V_VALUES = [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+        ALPHA_VALUES = algorithm_config["alpha_values"]
+        C_VALUES = [1.0, 0.1, 0.01]
+        V_VALUES = [1.0, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001]
 
         for alpha in ALPHA_VALUES:
             for c in C_VALUES:
@@ -106,10 +108,11 @@ def simulate(args):
                     EXPLORATION_STEP_LIST = []
                     ENERGY_CONSUMPTION_LIST = []
                     INFERENCE_TIME_LIST = []
+                    MODEL_CHOSEN_LIST = []
                     ENERGY_PER_MODEL = {
-                        "small": [],
-                        "medium": [],
-                        "large": [],
+                        "small": [1],
+                        "medium": [1],
+                        "large": [1],
                     }
 
                     model_category_list = [i for i in ENERGY_PER_MODEL.keys()]
@@ -117,7 +120,12 @@ def simulate(args):
                     Q = 0.0
                     ctr = 0
 
-                    run_name = f"{args.benchmark_name}_V={algorithm_config['V']}_a={algorithm_config['alpha']}_c={algorithm_config['c']}"
+                    run_name = (f"{args.benchmark_name}"
+                                f"_V={algorithm_config['V']}"
+                                f"_a={algorithm_config['alpha']}"
+                                f"_c={algorithm_config['c']}"
+                                f"_seed={seed}")
+
                     logger.info(f"Starting run for {run_name}")
                     with wandb.init(
                         entity=args.wandb_entity,
@@ -143,13 +151,17 @@ def simulate(args):
                                 ACCURACY_LIST.append(result)
                                 step_energy = sum([sample[i] for i in sample_cols if "energy" in i])
                                 step_time = sum([sample[i] for i in sample_cols if "inference" in i])
+                                chosen_model_id = len(model_category_list) - 1
+                                MODEL_CHOSEN_LIST.append(chosen_model_id)
                                 ENERGY_CONSUMPTION_LIST.append(step_energy)
                                 INFERENCE_TIME_LIST.append(step_time)
+
                                 for i in ENERGY_PER_MODEL.keys():
                                     ENERGY_PER_MODEL[i] = sample[f"energy_consumption_{i}"]
 
                                 monitoring_dict[f"mess_plus/energy"] = step_energy
-                                monitoring_dict[f"mess_plus/chosen_model"] = len(model_category_list) - 1
+                                monitoring_dict[f"mess_plus/chosen_model"] = chosen_model_id
+
 
                             else:
                                 preds, probs = classifier.predict(texts=[sample["input_text"]])
@@ -158,7 +170,7 @@ def simulate(args):
                                 energy = np.array(energy).reshape(-1, 1)
                                 probs = probs.reshape(-1, 1)
 
-                                cost_fn = algorithm_config["V"] * energy + Q * (algorithm_config["alpha"] - probs)
+                                cost_fn = algorithm_config["V"] * energy + Q * (alpha - probs)
                                 cost_fn = cost_fn.reshape(1, -1)
                                 chosen_model_id = np.argmin(cost_fn)
                                 model_category_chosen = model_category_list[chosen_model_id]
@@ -169,14 +181,15 @@ def simulate(args):
 
                                 INFERENCE_TIME_LIST.append(step_time)
                                 ENERGY_CONSUMPTION_LIST.append(step_energy)
+                                MODEL_CHOSEN_LIST.append(chosen_model_id)
+                                ACCURACY_LIST.append(result)
 
                                 monitoring_dict[f"mess_plus/energy"] = step_energy
                                 monitoring_dict[f"mess_plus/chosen_model"] = chosen_model_id
 
-                                ACCURACY_LIST.append(result)
-
                             Q = max(0.0, Q + algorithm_config["alpha"] - result)
 
+                            x = np.array(MODEL_CHOSEN_LIST)
                             monitoring_dict.update({
                                 "mess_plus/p_t": p_t,
                                 "mess_plus/x_t": x_t,
@@ -186,10 +199,12 @@ def simulate(args):
                                 "step_time": step_time,
                                 "total_runtime": sum(INFERENCE_TIME_LIST),
                                 "step_energy_consumption": step_energy,
+                                "models/small_chosen": len(np.where(x == 0)[0]) / (len(x) + 1e-8),
+                                "models/medium_chosen": len(np.where(x == 1)[0]) / (len(x) + 1e-8),
+                                "models/large_chosen": len(np.where(x == 2)[0]) / (len(x) + 1e-8),
                             })
 
                             ctr += 1
-
                             wandb.log(monitoring_dict, step=idx)
 
                     wandb.finish()
@@ -215,7 +230,5 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
-
-    NUM_PRETRAINING_STEPS = NUM_PRETRAINING_STEPS
 
     simulate(args)

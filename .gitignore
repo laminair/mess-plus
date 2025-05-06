@@ -8,6 +8,7 @@ lightning_logs/
 data/
 datasets/
 legacy/figures/
+classifier/checkpoints/
 
 *.zip
 *.sqsh

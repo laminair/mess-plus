@@ -24,7 +24,7 @@ enroot start \
     --mount /usr/share/ \
     messplus \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/python /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/mess_plus_simulator.py \
-    --benchmark-name boolq \
+    --benchmark-name piqa \
     --approach pretrained \
     --num-classifier-pretraining-steps 400 \
     --wandb-entity tum-i13 \
