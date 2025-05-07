@@ -74,7 +74,7 @@ class BertPandasDataset(torch.utils.data.Dataset):
 
 
 def create_bert_datasets(df, text_column, label_columns, model_name="bert-base-uncased", max_length=128, val_ratio=0.1,
-                         random_seed=42):
+                         random_seed=42, make_training_dataset_only: bool = False):
     """
     Creates train and validation datasets for BERT models from a pandas DataFrame.
 
@@ -96,19 +96,23 @@ def create_bert_datasets(df, text_column, label_columns, model_name="bert-base-u
     # Create the full dataset
     full_dataset = BertPandasDataset(df, text_column, label_columns, tokenizer, max_length)
 
-    # Calculate sizes for the split
-    dataset_size = len(full_dataset)
-    val_size = int(val_ratio * dataset_size)
-    train_size = dataset_size - val_size
+    if make_training_dataset_only:
+        return full_dataset, None, tokenizer
 
-    # Split the dataset
-    train_dataset, val_dataset = random_split(
-        full_dataset,
-        [train_size, val_size],
-        generator=torch.Generator().manual_seed(random_seed)
-    )
+    else:
+        # Calculate sizes for the split
+        dataset_size = len(full_dataset)
+        val_size = int(val_ratio * dataset_size)
+        train_size = dataset_size - val_size
 
-    return train_dataset, val_dataset, tokenizer
+        # Split the dataset
+        train_dataset, val_dataset = random_split(
+            full_dataset,
+            [train_size, val_size],
+            generator=torch.Generator().manual_seed(random_seed)
+        )
+
+        return train_dataset, val_dataset, tokenizer
 
 
 # Collate function to handle batching

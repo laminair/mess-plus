@@ -27,7 +27,7 @@ logging.basicConfig(
 
 
 PROJECT_ROOT_PATH = Path(__file__).parent
-SEEDS = [42, 43, 44]
+SEEDS = [42] # , 43, 44]
 NUM_PRETRAINING_STEPS = 400
 NUM_CLASSIFIER_LABELS = 3
 
@@ -63,27 +63,29 @@ def simulate(args):
         label_cols = ["label_small", "label_medium", "label_large"]
 
         classifier = MultilabelBERTClassifier(num_labels=NUM_CLASSIFIER_LABELS, **CONFIG["classifier_model"])
-        training_df = input_df.loc[:NUM_PRETRAINING_STEPS]
-        training_df = preprocess_dataframe(training_df, label_cols=label_cols)
 
-        train_dataset, val_dataset, tokenizer = create_bert_datasets(
-            training_df,
-            text_col,
-            label_cols,
-            model_name=CONFIG["classifier_model"]["model_id"],
-            max_length=CONFIG["classifier_model"]["max_length"],
-            val_ratio=CONFIG["classifier_model"]["validation_dataset_size"],
-            random_seed=seed
-        )
+        if args.approach == "pretrained":
+            training_df = input_df.loc[:NUM_PRETRAINING_STEPS]
+            training_df = preprocess_dataframe(training_df, label_cols=label_cols)
 
-        training_stats = classifier.fit(
-            train_dataset,
-            val_dataset,
-            epochs=CONFIG["classifier_model"]["epochs"],
-            early_stopping_patience=2
-        )
+            train_dataset, val_dataset, _ = create_bert_datasets(
+                training_df,
+                text_col,
+                label_cols,
+                model_name=CONFIG["classifier_model"]["model_id"],
+                max_length=CONFIG["classifier_model"]["max_length"],
+                val_ratio=CONFIG["classifier_model"]["validation_dataset_size"],
+                random_seed=seed
+            )
 
-        logger.info(training_stats)
+            training_stats = classifier.fit(
+                train_dataset,
+                val_dataset,
+                epochs=CONFIG["classifier_model"]["epochs"],
+                early_stopping_patience=2
+            )
+
+            logger.info(training_stats)
 
         logger.info(f"Small model average accuracy over time: {input_df[NUM_PRETRAINING_STEPS:]['label_small'].mean()}")
         logger.info(f"Medium model average accuracy over time: {input_df[NUM_PRETRAINING_STEPS:]['label_medium'].mean()}")
@@ -94,8 +96,8 @@ def simulate(args):
         sample_cols = input_df.columns.tolist()
 
         ALPHA_VALUES = algorithm_config["alpha_values"]
-        C_VALUES = [1.0, 0.1, 0.01]
-        V_VALUES = [1.0, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001]
+        C_VALUES = [1.0] # , 0.1, 0.01]
+        V_VALUES = [1.0] # , 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001]
 
         for alpha in ALPHA_VALUES:
             for c in C_VALUES:
@@ -109,6 +111,7 @@ def simulate(args):
                     ENERGY_CONSUMPTION_LIST = []
                     INFERENCE_TIME_LIST = []
                     MODEL_CHOSEN_LIST = []
+                    CLASSIFIER_LOSS_LIST = []
                     ENERGY_PER_MODEL = {
                         "small": [1],
                         "medium": [1],
@@ -133,7 +136,10 @@ def simulate(args):
                         name=run_name,
                         config=CONFIG
                     ) as run:
-                        run.summary.update({**{f"classifier/{k}": v for k, v in training_stats.items()}})
+
+                        if args.approach == "pretrained":
+                            run.summary.update({**{f"classifier/{k}": v for k, v in training_stats.items()}})
+
                         run.summary.update({
                             "V": algorithm_config["V"],
                             "alpha": algorithm_config["alpha"],
@@ -146,10 +152,44 @@ def simulate(args):
                             p_t, x_t = sample_from_bernoulli(c=algorithm_config["c"], timestamp=idx)
                             EXPLORATION_STEP_LIST.append(x_t)
 
+                            logger.debug(f"Working on sample {idx}")
+
                             if x_t == 1:
+
+                                if args.approach == "online":
+                                    training_dataset, _, _ = create_bert_datasets(
+                                        sample,
+                                        text_col,
+                                        label_cols,
+                                        model_name=CONFIG["classifier_model"]["model_id"],
+                                        max_length=CONFIG["classifier_model"]["max_length"],
+                                        val_ratio=CONFIG["classifier_model"]["validation_dataset_size"],
+                                        random_seed=seed
+                                    )
+
+                                    classifier_metrics_dict = classifier.fit(
+                                        training_dataset,
+                                        epochs=CONFIG["classifier_model"]["epochs"],
+                                        early_stopping_patience=2,
+                                        ctr=ctr,
+                                        online_learn=True
+                                    )
+
+                                    CLASSIFIER_LOSS_LIST.append(
+                                        classifier_metrics_dict["classifier/step_train_loss"]
+                                    )
+                                    monitoring_dict["classifier/train_loss"] = sum(CLASSIFIER_LOSS_LIST) / (ctr + 1)
+                                    train_energy = classifier_metrics_dict["classifier/train_step_energy"]
+                                    monitoring_dict["classifier/train_step_energy"] = train_energy
+
                                 result = sample["label_large"]
                                 ACCURACY_LIST.append(result)
                                 step_energy = sum([sample[i] for i in sample_cols if "energy" in i])
+                                monitoring_dict[f"mess_plus/inference_only_energy"] = step_energy
+                                if args.approach == "online":
+                                    # We need to add the energy spent on training to the total energy consumption.
+                                    step_energy += train_energy
+
                                 step_time = sum([sample[i] for i in sample_cols if "inference" in i])
                                 chosen_model_id = len(model_category_list) - 1
                                 MODEL_CHOSEN_LIST.append(chosen_model_id)
@@ -159,7 +199,7 @@ def simulate(args):
                                 for i in ENERGY_PER_MODEL.keys():
                                     ENERGY_PER_MODEL[i] = sample[f"energy_consumption_{i}"]
 
-                                monitoring_dict[f"mess_plus/energy"] = step_energy
+                                monitoring_dict[f"mess_plus/total_energy_incl_classifier"] = step_energy
                                 monitoring_dict[f"mess_plus/chosen_model"] = chosen_model_id
 
 

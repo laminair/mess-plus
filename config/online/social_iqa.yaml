@@ -39,16 +39,17 @@ classifier_model:
   reset_optimizer: false
   regularization_lambda: 0.0
   gpu_index: 0
-  disable_tqdm: false
+  disable_tqdm: true
   # Path uses the "classifier" folder as root. Alternatively you can specify an absolute path.
   checkpoint_path: "checkpoints/social_iqa"
-  use_pretrained_classifier: true
+  use_pretrained_classifier: false
   scoring_method: raw
   validation_dataset_size: 0.1
   generate_training_dataset: false
   write_training_dataset_to_disk: false
 
 algorithm:
+  alpha_values: [0.42, 0.44, 0.46]
   alpha: 0.75
   c: 1
   V: 0.01

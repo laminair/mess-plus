@@ -13,11 +13,14 @@ from tqdm import tqdm
 from transformers import AutoTokenizer, get_linear_schedule_with_warmup, AutoModel, AutoConfig, AutoModelForSequenceClassification
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 
+from zeus.monitor import ZeusMonitor
+
 from typing import List
 
 
 # Get absolute path of current file
 FILE_FOLDER_PATH = Path(__file__).resolve().parent
+NUM_GPUS = torch.cuda.device_count()
 
 
 # Setup logging
@@ -131,6 +134,8 @@ class MultilabelBERTClassifier:
         self.device = device if device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
         logger.info(f"Using device: {self.device}")
 
+        self.energy_monitor = ZeusMonitor(gpu_indices=[i for i in range(NUM_GPUS)], approx_instant_energy=True)
+
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
 
@@ -143,7 +148,9 @@ class MultilabelBERTClassifier:
             checkpoint_pth = f"{FILE_FOLDER_PATH}/{self.checkpoint_path}"
             self.checkpoint_path = checkpoint_pth
 
-    def fit(self, train_dataset, val_dataset, epochs=5, early_stopping_patience=3):
+        self.train_ctr = 0
+
+    def fit(self, train_dataset, val_dataset = None, epochs=5, early_stopping_patience=3, ctr: int = None, online_learn: bool = False):
         """Train the model with early stopping based on validation performance."""
         # Load the model if not already done
         self.make_model_if_not_exists(train_dataset=train_dataset)
@@ -156,21 +163,13 @@ class MultilabelBERTClassifier:
             collate_fn=self.collate_fn
         )
 
-        val_loader = DataLoader(
-            val_dataset,
-            batch_size=self.batch_size,
-            shuffle=False,
-            collate_fn=self.collate_fn
-        )
-
-        total_steps = len(train_loader) * epochs
-        warmup_steps = int(total_steps * self.warmup_ratio)
-
-        # scheduler = get_linear_schedule_with_warmup(
-        #     self.optimizer,
-        #     num_warmup_steps=warmup_steps,
-        #     num_training_steps=total_steps
-        # )
+        if online_learn is False:
+            val_loader = DataLoader(
+                val_dataset,
+                batch_size=self.batch_size,
+                shuffle=False,
+                collate_fn=self.collate_fn
+            )
 
         # Loss function for multi-label classification
         criterion = nn.BCEWithLogitsLoss()
@@ -179,7 +178,9 @@ class MultilabelBERTClassifier:
         best_val_f1 = 0
         patience_counter = 0
 
-        metrics_dict = {}
+        metrics_dict = {
+            "classifier/train_step_energy": 0.0
+        }
         for epoch in range(epochs):
             start_time = time.time()
 
@@ -207,14 +208,16 @@ class MultilabelBERTClassifier:
                 self.optimizer.zero_grad()
 
                 # Forward pass
+                self.energy_monitor.begin_window("training_step")
                 outputs = self.model(
                     input_ids=batch['input_ids'],
                     attention_mask=batch['attention_mask'],
                     # token_type_ids=batch.get('token_type_ids', None)
                 )
+                measurement = self.energy_monitor.end_window("training_step")
+                metrics_dict["classifier/train_step_energy"] += sum([val for val in measurement.gpu_energy.values()])
 
                 logits = outputs["logits"]
-                # print(logits)
                 loss = criterion(logits, batch['labels'])
 
                 # # Backward pass and optimize
@@ -238,139 +241,150 @@ class MultilabelBERTClassifier:
                     'lr': f"{self.learning_rate}"  # f"{scheduler.get_last_lr()[0]:.1e}"
                 })
 
-                if wandb.run is not None:
-                    # We only log to W&B if initialized
-                    wandb.log({
-                        "batch": idx + epoch * len(train_loader),
-                        "batch_loss": batch_loss,
-                        "learning_rate": self.learning_rate,  # scheduler.get_last_lr()[0],
-                        "running_loss": running_loss,
-                    })
+                # if wandb.run is not None:
+                #     # We only log to W&B if initialized
+                #     wandb.log({
+                #         "classifier/batch": idx + epoch * len(train_loader),
+                #         "classifier/batch_loss": batch_loss,
+                #         "classifier/learning_rate": self.learning_rate,  # scheduler.get_last_lr()[0],
+                #         "classifier/running_loss": running_loss,
+                #         "classifier/energy_consumption": sum([val for val in measurement.gpu_energy.values()]),
+                #         "classifier/train_ctr": self.train_ctr,
+                #     }, step=ctr)
+
+                self.train_ctr += 1
 
             avg_train_loss = train_loss / train_steps
 
-            # Validation
-            self.model.eval()
-            val_loss = 0
-            val_steps = 0
-            all_preds = []
-            all_labels = []
+            metrics_dict["classifier/step_train_loss"] = avg_train_loss
 
-            # Create a validation progress bar
-            val_progress = tqdm(
-                val_loader,
-                desc=f"Epoch {epoch + 1}/{epochs} [Validation]",
-                leave=True,
-                position=0,
-                disable=self.disable_tqdm
+            if online_learn is False:
+                # Validation
+                self.model.eval()
+                val_loss = 0
+                val_steps = 0
+                all_preds = []
+                all_labels = []
 
-            )
+                # Create a validation progress bar
+                val_progress = tqdm(
+                    val_loader,
+                    desc=f"Epoch {epoch + 1}/{epochs} [Validation]",
+                    leave=True,
+                    position=0,
+                    disable=self.disable_tqdm
 
-            with torch.no_grad():
-                for batch in val_progress:
-                    # Move batch to device
-                    batch = {k: v.to(self.device) for k, v in batch.items()}
+                )
 
-                    # Forward pass
-                    outputs = self.model(
-                        input_ids=batch['input_ids'],
-                        attention_mask=batch['attention_mask'],
-                        # token_type_ids=batch.get('token_type_ids', None)
-                    )
+                with torch.no_grad():
+                    for batch in val_progress:
+                        # Move batch to device
+                        batch = {k: v.to(self.device) for k, v in batch.items()}
 
-                    logits = outputs["logits"]
-                    loss = criterion(logits, batch['labels'])
-                    batch_loss = loss.item()
-                    val_loss += batch_loss
-                    val_steps += 1
+                        # Forward pass
+                        outputs = self.model(
+                            input_ids=batch['input_ids'],
+                            attention_mask=batch['attention_mask'],
+                            # token_type_ids=batch.get('token_type_ids', None)
+                        )
 
-                    # Update validation progress bar
-                    val_progress.set_postfix({
-                        'val_loss': f"{batch_loss:.4f}",
-                        'avg_val_loss': f"{val_loss / val_steps:.4f}"
-                    })
+                        logits = outputs["logits"]
+                        loss = criterion(logits, batch['labels'])
+                        batch_loss = loss.item()
+                        val_loss += batch_loss
+                        val_steps += 1
 
-                    # Convert logits to predictions
-                    preds = torch.sigmoid(logits).cpu().numpy()
-                    labels = batch['labels'].cpu().numpy()
+                        # Update validation progress bar
+                        val_progress.set_postfix({
+                            'val_loss': f"{batch_loss:.4f}",
+                            'avg_val_loss': f"{val_loss / val_steps:.4f}"
+                        })
 
-                    # Apply threshold
-                    preds = (preds >= self.threshold).astype(int)
+                        # Convert logits to predictions
+                        preds = torch.sigmoid(logits).cpu().numpy()
+                        labels = batch['labels'].cpu().numpy()
 
-                    all_preds.append(preds)
-                    all_labels.append(labels)
+                        # Apply threshold
+                        preds = (preds >= self.threshold).astype(int)
 
-            # Combine predictions and calculate metrics
-            all_preds = np.vstack(all_preds)
-            all_labels = np.vstack(all_labels)
+                        all_preds.append(preds)
+                        all_labels.append(labels)
 
-            avg_val_loss = val_loss / val_steps
-            val_accuracy = accuracy_score(all_labels.flatten(), all_preds.flatten())
-            val_precision = precision_score(all_labels, all_preds, average='micro', zero_division=0)
-            val_recall = recall_score(all_labels, all_preds, average='micro', zero_division=0)
-            val_f1 = f1_score(all_labels, all_preds, average='micro', zero_division=0)
-            val_f1_macro = f1_score(all_labels, all_preds, average='macro', zero_division=0)
+                # Combine predictions and calculate metrics
+                all_preds = np.vstack(all_preds)
+                all_labels = np.vstack(all_labels)
 
-            # Print epoch summary with more detailed metrics
-            epoch_time = time.time() - start_time
-            logger.info(f"Epoch {epoch + 1}/{epochs} - Time: {epoch_time:.2f}s")
-            logger.info(f"  Train Loss: {avg_train_loss:.4f} - Val Loss: {avg_val_loss:.4f}")
-            logger.info(
-                f"  Val Metrics - Accuracy: {val_accuracy:.4f}, F1: {val_f1:.4f}, F1(macro): {val_f1_macro:.4f}")
-            # logger.info(f"  Val Metrics - Precision: {val_precision:.4f}, Recall: {val_recall:.4f}")
+                avg_val_loss = val_loss / val_steps
+                val_accuracy = accuracy_score(all_labels.flatten(), all_preds.flatten())
+                val_precision = precision_score(all_labels, all_preds, average='micro', zero_division=0)
+                val_recall = recall_score(all_labels, all_preds, average='micro', zero_division=0)
+                val_f1 = f1_score(all_labels, all_preds, average='micro', zero_division=0)
+                val_f1_macro = f1_score(all_labels, all_preds, average='macro', zero_division=0)
 
-            # Log epoch metrics
-            metrics_dict.update({
-                "epoch": epoch + 1,
-                "train/loss": avg_train_loss,
-                "val/loss": avg_val_loss,
-                "val/accuracy": val_accuracy,
-                "val/precision_micro": val_precision,
-                "val/recall_micro": val_recall,
-                "val/f1_micro": val_f1,
-                "val/f1_macro": val_f1_macro,
-                # "val/f1_weighted": val_f1_weighted,
-                "time/epoch_seconds": epoch_time
-            })
+                # Print epoch summary with more detailed metrics
+                epoch_time = time.time() - start_time
+                logger.info(f"Epoch {epoch + 1}/{epochs} - Time: {epoch_time:.2f}s")
+                logger.info(f"  Train Loss: {avg_train_loss:.4f} - Val Loss: {avg_val_loss:.4f}")
+                logger.info(
+                    f"  Val Metrics - Accuracy: {val_accuracy:.4f}, F1: {val_f1:.4f}, F1(macro): {val_f1_macro:.4f}")
+                # logger.info(f"  Val Metrics - Precision: {val_precision:.4f}, Recall: {val_recall:.4f}")
 
-            # Print per-label metrics if there are fewer than 10 labels
-            if self.num_labels < 10:
-                per_label_f1 = f1_score(all_labels, all_preds, average=None, zero_division=0)
-                per_label_precision = precision_score(all_labels, all_preds, average=None, zero_division=0)
-                per_label_recall = recall_score(all_labels, all_preds, average=None, zero_division=0)
+                # Log epoch metrics
+                metrics_dict.update({
+                    "epoch": epoch + 1,
+                    "train/loss": avg_train_loss,
+                    "val/loss": avg_val_loss,
+                    "val/accuracy": val_accuracy,
+                    "val/precision_micro": val_precision,
+                    "val/recall_micro": val_recall,
+                    "val/f1_micro": val_f1,
+                    "val/f1_macro": val_f1_macro,
+                    # "val/f1_weighted": val_f1_weighted,
+                    "time/epoch_seconds": epoch_time
+                })
 
-                logger.info("  Per-label metrics:")
-                for i in range(self.num_labels):
-                    metrics_dict.update({
-                        f"val/{i}_f1score": per_label_f1[i],
-                        f"val/{i}_recall": per_label_precision[i],
-                        f"val/{i}_precision": per_label_recall[i]
-                    })
+                # Print per-label metrics if there are fewer than 10 labels
+                if self.num_labels < 10:
+                    per_label_f1 = f1_score(all_labels, all_preds, average=None, zero_division=0)
+                    per_label_precision = precision_score(all_labels, all_preds, average=None, zero_division=0)
+                    per_label_recall = recall_score(all_labels, all_preds, average=None, zero_division=0)
 
-                    logger.info(
-                        f"    Label {i}: F1={per_label_f1[i]:.4f}, "
-                        f"Prec={per_label_precision[i]:.4f}, "
-                        f"Rec={per_label_recall[i]:.4f}"
-                    )
+                    logger.info("  Per-label metrics:")
+                    for i in range(self.num_labels):
+                        metrics_dict.update({
+                            f"val/{i}_f1score": per_label_f1[i],
+                            f"val/{i}_recall": per_label_precision[i],
+                            f"val/{i}_precision": per_label_recall[i]
+                        })
 
-            if wandb.run is not None:
-                # We only log to W&B if initialized
-                wandb.log(metrics_dict)
+                        logger.info(
+                            f"    Label {i}: F1={per_label_f1[i]:.4f}, "
+                            f"Prec={per_label_precision[i]:.4f}, "
+                            f"Rec={per_label_recall[i]:.4f}"
+                        )
 
-            # Early stopping check
-            if val_f1 > best_val_f1:
-                best_val_f1 = val_f1
-                patience_counter = 0
-                # Save the best model
-                self.get_or_create_path(self.checkpoint_path)
-                self.save_model(f"{self.checkpoint_path}/messplus_classifier.pt")
-                logger.info("Best model saved")
-            else:
-                patience_counter += 1
-                logger.warning(f"No improvement: {patience_counter}/{early_stopping_patience}")
-                if patience_counter >= early_stopping_patience:
-                    logger.warning("Early stopping triggered!")
-                    break
+                if wandb.run is not None:
+                    # We only log to W&B if initialized
+                    if ctr is not None:
+                        wandb.log(metrics_dict, step=ctr)
+                    else:
+                        wandb.log(metrics_dict)
+
+                # Early stopping check
+                if val_f1 > best_val_f1:
+                    best_val_f1 = val_f1
+                    patience_counter = 0
+                    # Save the best model
+                    if online_learn is False:
+                        self.get_or_create_path(self.checkpoint_path)
+                        self.save_model(f"{self.checkpoint_path}/messplus_classifier.pt")
+                        logger.info("Best model saved")
+                else:
+                    patience_counter += 1
+                    logger.warning(f"No improvement: {patience_counter}/{early_stopping_patience}")
+                    if patience_counter >= early_stopping_patience:
+                        logger.warning("Early stopping triggered!")
+                        break
 
         return metrics_dict
 

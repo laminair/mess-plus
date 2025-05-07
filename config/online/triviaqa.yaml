@@ -39,10 +39,10 @@ classifier_model:
   reset_optimizer: false
   regularization_lambda: 0.0
   gpu_index: 0
-  disable_tqdm: false
+  disable_tqdm: true
   # Path uses the "classifier" folder as root. Alternatively you can specify an absolute path.
   checkpoint_path: "checkpoints/triviaqa"
-  use_pretrained_classifier: true
+  use_pretrained_classifier: false
   scoring_method: raw
   validation_dataset_size: 0.1
   generate_training_dataset: false
