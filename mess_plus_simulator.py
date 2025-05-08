@@ -27,7 +27,7 @@ logging.basicConfig(
 
 
 PROJECT_ROOT_PATH = Path(__file__).parent
-SEEDS = [42] # , 43, 44]
+SEEDS = [42, 43, 44]
 NUM_PRETRAINING_STEPS = 400
 NUM_CLASSIFIER_LABELS = 3
 
@@ -96,8 +96,8 @@ def simulate(args):
         sample_cols = input_df.columns.tolist()
 
         ALPHA_VALUES = algorithm_config["alpha_values"]
-        C_VALUES = [1.0] # , 0.1, 0.01]
-        V_VALUES = [1.0] # , 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001]
+        C_VALUES = [1.0, 0.1, 0.01]
+        V_VALUES = [1.0, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001]
 
         for alpha in ALPHA_VALUES:
             for c in C_VALUES:
@@ -105,6 +105,10 @@ def simulate(args):
                     algorithm_config["V"] = v
                     algorithm_config["alpha"] = alpha
                     algorithm_config["c"] = c
+
+                    if seed == 42 and c == 1.0 and v == 1.0:
+                        logger.info(f"Skipping run for Alpha: {alpha}, C: {c}, V: {v}. Already done before.")
+                        continue
 
                     ACCURACY_LIST = []
                     EXPLORATION_STEP_LIST = []
