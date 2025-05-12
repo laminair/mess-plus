@@ -121,7 +121,7 @@ class MessLMEvalVLLM(TemplateLM):
                 load_format=quantization if quantization is not None else "auto",
                 seed=seed,
                 enforce_eager=enforce_eager,
-                )
+            )
 
         else:
             eval_logger.warning(
