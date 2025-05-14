@@ -313,6 +313,8 @@ class MessPlusAutomaticModelSelector:
                 entity=self.wandb_entity,
                 config=self.config
             ) as run:
+                # YOU START HERE
+
                 self.wandb_run = run
                 self.wandb_run.summary["V"] = self.algorithm_config["V"]
                 self.wandb_run.summary["alpha"] = self.algorithm_config["alpha"]
