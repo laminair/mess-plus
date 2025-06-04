@@ -27,4 +27,4 @@ enroot start \
     --benchmark-name piqa \
     --approach online \
     --wandb-entity tum-i13 \
-    --wandb-project mess-plus_3-models_online_vFINAL
+    --wandb-project mess-plus-api-pricing
