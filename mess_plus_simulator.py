@@ -153,11 +153,8 @@ def simulate(args):
                     Q = 0.0
                     ctr = 0
 
-                    model_key = CONFIG["classifier_model"]["model_id"]
-
                     run_name = (
                         f"{args.benchmark_name}"
-                        f"_model={model_key}"
                         f"_V={algorithm_config['V']}"
                         f"_a={algorithm_config['alpha']}"
                         f"_c={algorithm_config['c']}"
