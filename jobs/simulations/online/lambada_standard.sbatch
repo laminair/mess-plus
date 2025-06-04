@@ -19,6 +19,7 @@ enroot start \
     -e HF_DATASETS_TRUST_REMOTE_CODE=True \
     -e VLLM_USE_V1=0 \
     --mount /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/go76xom2/ \
+    --mount /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/ \
     --mount /dss/dsshome1/09/ge56heh2/ \
     --mount /sbin \
     --mount /usr/share/ \
