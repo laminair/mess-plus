@@ -21,6 +21,6 @@ enroot start \
     --mount /usr/share/ \
     messplus \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/huggingface-cli \
-    download meta-llama/Llama-3.2-1B-Instruct \
+    download Qwen/Qwen2-0.5B-Instruct \
     --repo-type model \
     --local-dir-use-symlinks False
