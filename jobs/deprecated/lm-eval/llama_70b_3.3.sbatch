@@ -1,14 +1,14 @@
 #!/bin/bash
 #SBATCH -p lrz-hgx-h100-92x4
 #SBATCH --gres=gpu:4
-#SBATCH --time=06:00:00
+#SBATCH --time=01:00:00
 #SBATCH -o output_%A.out
 #SBATCH --exclude lrz-hgx-h100-030
 
 cd "$(dirname "$0")"
 
 nvidia-smi
-enroot create /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/eoinference_v5.sqsh
+enroot create /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/eoinference_v5.sqsh
 
 # Train
 enroot start \
@@ -22,11 +22,11 @@ enroot start \
     --mount /sbin \
     --mount /usr/share/ \
     eoinference_v5 \
-    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/lm_eval \
-    --model vllm \
-    --model_args pretrained=meta-llama/Llama-3.1-405B-Instruct-FP8,tensor_parallel_size=4,pipeline_parallel_size=2,dtype=auto,gpu_memory_utilization=0.98,max_model_len=2048 \
+    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/lm_eval \
+    --model hf \
+    --model_args pretrained=meta-llama/Llama-3.3-70B-Instruct,trust_remote_code=True,parallelize=True \
     --tasks logiqa2,boolq,mmlu \
-    --batch_size auto \
+    --batch_size auto:4 \
     --trust_remote_code \
     --log_samples \
-    --output_path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/lm_eval_results
+    --output_path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/data/inference_outputs/

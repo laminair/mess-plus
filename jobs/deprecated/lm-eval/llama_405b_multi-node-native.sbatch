@@ -15,11 +15,11 @@ export WORLD_SIZE=8
 master_addr=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export MASTER_ADDR=$master_addr
 
-srun --container-image='/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/eoinference_v5.sqsh' \
+srun --container-image='/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/messplus.sqsh' \
      --container-mounts=/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/:/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/,/dss/dsshome1/09/ge56heh2/:/dss/dsshome1/09/ge56heh2/,/sbin:/sbin,/usr/share/:/usr/share/ \
      --container-env=HF_TOKEN_PATH=/dss/dsshome1/09/ge56heh2/.cache/huggingface/token,/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/.cache/hf/misc,/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/.cache/datasets,HF_DATASETS_TRUST_REMOTE_CODE=True \
      --ntasks-per-node=4 \
-     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/accelerate launch \
+     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/accelerate launch \
      --multi_gpu \
      --num_machines 2 \
      --num_processes 4 \
@@ -35,14 +35,14 @@ srun --container-image='/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh
      --batch_size auto:4 \
      --trust_remote_code \
      --log_samples \
-     --output_path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/lm_eval_results
+     --output_path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/lm_eval_results
 
 
-srun --container-image='/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/eoinference_v5.sqsh' \
+srun --container-image='/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/messplus.sqsh' \
      --container-mounts=/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/:/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/,/dss/dsshome1/09/ge56heh2/:/dss/dsshome1/09/ge56heh2/,/sbin:/sbin,/usr/share/:/usr/share/ \
      --container-env=HF_TOKEN_PATH=/dss/dsshome1/09/ge56heh2/.cache/huggingface/token,/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/.cache/hf/misc,/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/.cache/datasets,HF_DATASETS_TRUST_REMOTE_CODE=True \
      --ntasks-per-node=4 \
-     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/venv/bin/accelerate launch \
+     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/accelerate launch \
      --multi_gpu \
      --num_machines 2 \
      --num_processes 4 \
@@ -58,4 +58,4 @@ srun --container-image='/dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh
      --batch_size auto:4 \
      --trust_remote_code \
      --log_samples \
-     --output_path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/Energy-Optimal-Inferencing/lm_eval_results
+     --output_path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/lm_eval_results
