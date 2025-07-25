@@ -29,7 +29,6 @@ logging.basicConfig(
 PROJECT_ROOT_PATH = Path(__file__).parent
 SEEDS = [42, 43, 44]
 NUM_PRETRAINING_STEPS = 400
-NUM_CLASSIFIER_LABELS = 3
 
 
 def simulate(args):
@@ -39,10 +38,10 @@ def simulate(args):
         set_all_seeds(seed)
 
         if args.approach == "pretrained":
-            config_path = Path(f"{PROJECT_ROOT_PATH}/config/pretrained/{args.benchmark_name}.yaml")
+            config_path = Path(f"{PROJECT_ROOT_PATH}/config/{args.model_family}/pretrained/{args.benchmark_name}.yaml")
             NUM_PRETRAINING_STEPS = args.num_classifier_pretraining_steps
         elif args.approach == "online":
-            config_path = Path(f"{PROJECT_ROOT_PATH}/config/online/{args.benchmark_name}.yaml")
+            config_path = Path(f"{PROJECT_ROOT_PATH}/config/{args.model_family}/online/{args.benchmark_name}.yaml")
             NUM_PRETRAINING_STEPS = 0
         else:
             raise NotImplementedError(f"Approach {args.approach} not implemented.")
@@ -60,9 +59,10 @@ def simulate(args):
         logger.info(input_df.head())
 
         text_col = "input_text"
-        label_cols = ["label_small", "label_medium", "label_large"]
+        num_labels = len(CONFIG["model_zoo"].keys())
+        label_cols = [f"label_{data['category']}" for name, data in CONFIG["model_zoo"].items()]
 
-        classifier = MultilabelBERTClassifier(num_labels=NUM_CLASSIFIER_LABELS, **CONFIG["classifier_model"])
+        classifier = MultilabelBERTClassifier(num_labels=num_labels, **CONFIG["classifier_model"])
 
         if args.approach == "pretrained":
             training_df = input_df.loc[:NUM_PRETRAINING_STEPS]
@@ -261,6 +261,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Train classification model')
     parser.add_argument('--benchmark-name', type=str, required=True,
                         help='Name of the benchmark you want to run. Must correspond with filename in config folder.')
+    parser.add_argument('--model-family', type=str, required=True, choices=["llama3", "qwen2"],
+                        help='Folder name where the config file is located.')
     parser.add_argument('--approach', type=str, required=True, choices=["pretrained", "online"],
                         help='Whether to use a pre-trained classifier or learn the classifier online')
     parser.add_argument('--wandb-entity', type=str, required=True,

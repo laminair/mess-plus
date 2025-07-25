@@ -9,6 +9,7 @@ data/
 datasets/
 legacy/figures/
 classifier/checkpoints/
+/evaluations/pivot_sample_data
 
 *.zip
 *.sqsh
@@ -16,3 +17,7 @@ classifier/checkpoints/
 *.csv
 *.ckpt
 *.log
+*.pdf
+*.png
+*.tex
+

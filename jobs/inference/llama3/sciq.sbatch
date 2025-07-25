@@ -1,9 +1,8 @@
 #!/bin/bash
 #SBATCH -p lrz-hgx-h100-94x4
 #SBATCH --gres=gpu:1
-#SBATCH --time=16:00:00
+#SBATCH --time=10:30:00
 #SBATCH -o output_%A.out
-#SBATCH --exclude lrz-hgx-h100-025,lrz-hgx-h100-004,lrz-hgx-h100-030,lrz-hgx-h100-021
 
 cd "$(dirname "$0")"
 
@@ -23,8 +22,7 @@ enroot start \
     --mount /sbin \
     --mount /usr/share/ \
     messplus \
-    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/python /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/mess_plus_simulator.py \
-    --benchmark-name boolq \
-    --approach online \
+    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/python /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/mess_plus.py \
+    --config /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/config/llama3/online/sciq.yaml \
     --wandb-entity tum-i13 \
-    --wandb-project mess-plus_3-models_online_vFINAL
+    --project-name mess-plus_llama3-models_online_v01

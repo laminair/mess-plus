@@ -24,7 +24,8 @@ enroot start \
     --mount /usr/share/ \
     messplus \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/python /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/mess_plus_simulator.py \
-    --benchmark-name sciq \
+    --benchmark-name social_iqa \
+    --model-family llama3 \
     --approach online \
     --wandb-entity tum-i13 \
-    --wandb-project mess-plus_3-models_online_vFINAL
+    --wandb-project mess-plus_3-llama3_online_vFINAL
