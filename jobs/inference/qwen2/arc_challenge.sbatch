@@ -25,4 +25,4 @@ enroot start \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/python /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/mess_plus.py \
     --config /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/config/qwen2/online/arc_challenge.yaml \
     --wandb-entity tum-i13 \
-    --wandb-project mess-plus_qwen2-models_online_v01
+    --project-name mess-plus_qwen2-models_online_v01
