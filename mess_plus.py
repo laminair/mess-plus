@@ -321,7 +321,7 @@ class MessPlusAutomaticModelSelector:
                 self.wandb_run.summary["c"] = self.algorithm_config["c"]
 
                 # We initialize one classifier model for every benchmark
-                self.__warmup_classifier_model()
+                # self.__warmup_classifier_model()
                 model_categories = [i for i in self.vllm_models.keys()]
 
                 try:
