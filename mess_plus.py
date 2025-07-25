@@ -63,7 +63,7 @@ datasets.config.HF_DATASETS_TRUST_REMOTE_CODE = True
 
 class MessPlusAutomaticModelSelector:
 
-    def __init__(self, config_file_path: str, project_name: str, wandb_entity: str = None):
+    def __init__(self, config_file_path: str, project_name: str, wandb_entity: str = None, model_family: str = "llama3"):
         self.config = yaml.safe_load(open(config_file_path, "r"))
         self.lm_eval_config = self.config["lm_eval"]
         self.algorithm_config = self.config["algorithm"]
@@ -139,7 +139,7 @@ class MessPlusAutomaticModelSelector:
 
         # Config to capture the inference outputs for classifier validation
         self.data_writer = StreamingDataProcessor(
-            save_path=f"{PROJECT_ROOT_PATH}/data/qwen_inference_outputs",
+            save_path=f"{PROJECT_ROOT_PATH}/data/{model_family}/inference_outputs",
             file_prefix="inference_data_",
             save_frequency=100
         )
@@ -784,6 +784,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+	    "-m",
+	    "--model-family",
+	    type=str
+    )
+
+    parser.add_argument(
         "-e",
         "--wandb-entity",
         type=str
@@ -800,7 +806,8 @@ if __name__ == "__main__":
     selector = MessPlusAutomaticModelSelector(
         config_file_path=args.config,
         project_name=args.project_name,
-        wandb_entity=args.wandb_entity
+        wandb_entity=args.wandb_entity,
+	    model_family=args.model_family
     )
 
     try:

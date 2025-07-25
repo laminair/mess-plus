@@ -50,7 +50,7 @@ def simulate(args):
             CONFIG = yaml.safe_load(f)
             logger.info(CONFIG)
 
-        input_df = read_files_from_folder(folder_path=f"{PROJECT_ROOT_PATH}/data/inference_outputs/{args.benchmark_name}")
+        input_df = read_files_from_folder(folder_path=f"{PROJECT_ROOT_PATH}/data/{args.model_family}/inference_outputs/{args.benchmark_name}")
         input_df["idx_original"] = input_df.index
         input_df = input_df.sample(frac=1, random_state=seed).reset_index(drop=True)
 

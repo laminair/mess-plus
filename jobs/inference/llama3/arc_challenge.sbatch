@@ -24,5 +24,6 @@ enroot start \
     messplus \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/python /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/mess_plus.py \
     --config /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/config/llama3/online/arc_challenge.yaml \
+    --model-family llama3 \
     --wandb-entity tum-i13 \
     --project-name mess-plus_llama3-models_online_v01
