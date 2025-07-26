@@ -59,8 +59,9 @@ def simulate(args):
         logger.info(input_df.head())
 
         text_col = "input_text"
-        num_labels = len(CONFIG["model_zoo"].keys())
-        label_cols = [f"label_{data['category']}" for name, data in CONFIG["model_zoo"].items()]
+        model_labels = [data['category'] for _, data in CONFIG["model_zoo"].items()]
+        num_labels = len(model_labels)
+        label_cols = [f"label_{label}" for label in model_labels]
 
         classifier = MultilabelBERTClassifier(num_labels=num_labels, **CONFIG["classifier_model"])
 
@@ -116,11 +117,7 @@ def simulate(args):
                     INFERENCE_TIME_LIST = []
                     MODEL_CHOSEN_LIST = []
                     CLASSIFIER_LOSS_LIST = []
-                    ENERGY_PER_MODEL = {
-                        "small": [1],
-                        "medium": [1],
-                        "large": [1],
-                    }
+                    ENERGY_PER_MODEL = {i: [1] for i in model_labels}
 
                     model_category_list = [i for i in ENERGY_PER_MODEL.keys()]
 
@@ -243,10 +240,17 @@ def simulate(args):
                                 "step_time": step_time,
                                 "total_runtime": sum(INFERENCE_TIME_LIST),
                                 "step_energy_consumption": step_energy,
-                                "models/small_chosen": len(np.where(x == 0)[0]) / (len(x) + 1e-8),
-                                "models/medium_chosen": len(np.where(x == 1)[0]) / (len(x) + 1e-8),
-                                "models/large_chosen": len(np.where(x == 2)[0]) / (len(x) + 1e-8),
+                                # "models/small_chosen": len(np.where(x == 0)[0]) / (len(x) + 1e-8),
+                                # "models/medium_chosen": len(np.where(x == 1)[0]) / (len(x) + 1e-8),
+                                # "models/large_chosen": len(np.where(x == 2)[0]) / (len(x) + 1e-8),
                             })
+
+                            # Add model ids to monitoring dict
+                            chosen_data = {
+	                            f"models/{label}_chosen": len(np.where(x == ldx)[0]) / (len(x) + 1e-8)
+	                            for ldx, label in enumerate(model_category_chosen)
+                            }
+                            monitoring_dict.update(chosen_data)
 
                             ctr += 1
                             wandb.log(monitoring_dict, step=idx)
