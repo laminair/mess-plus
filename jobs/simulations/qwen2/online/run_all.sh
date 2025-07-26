@@ -18,6 +18,6 @@ sbatch sciq.sbatch
 sleep 1
 sbatch social_iqa.sbatch
 sleep 1
-# sbatch winogrande.sbatch
-# sleep 1
+ sbatch winogrande.sbatch
+ sleep 1
 echo "All jobs launched!"
