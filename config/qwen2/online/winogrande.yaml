@@ -49,7 +49,7 @@ classifier_model:
   # Path uses the "classifier" folder as root. Alternatively you can specify an absolute path.
   checkpoint_path: "checkpoints/winogrande"
   use_pretrained_classifier: false
-  scoring_method: raw0.
+  scoring_method: raw
   validation_dataset_size: 0.1
   generate_training_dataset: true
   write_training_dataset_to_disk: true

@@ -23,7 +23,7 @@ enroot start \
     --mount /usr/share/ \
     messplus \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/python /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/mess_plus.py \
-    --config /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/config/qwen2/online/social_iqa.yaml \
+    --config /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/config/qwen2/online/winogrande.yaml \
     --model-family qwen2 \
     --wandb-entity tum-i13 \
     --project-name mess-plus_qwen2-models_online_v01
