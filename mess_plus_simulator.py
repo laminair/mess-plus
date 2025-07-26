@@ -104,9 +104,9 @@ def simulate(args):
 					algorithm_config["alpha"] = alpha
 					algorithm_config["c"] = c
 
-					if seed == 42 and c == 1.0 and v == 1.0:
-						logger.info(f"Skipping run for Alpha: {alpha}, C: {c}, V: {v}. Already done before.")
-						continue
+					# if seed == 42 and c == 1.0 and v == 1.0:
+					# 	logger.info(f"Skipping run for Alpha: {alpha}, C: {c}, V: {v}. Already done before.")
+					# 	continue
 
 					ACCURACY_LIST = []
 					EXPLORATION_STEP_LIST = []
