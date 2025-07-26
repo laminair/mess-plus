@@ -248,7 +248,7 @@ def simulate(args):
                             # Add model ids to monitoring dict
                             chosen_data = {
 	                            f"models/{label}_chosen": len(np.where(x == ldx)[0]) / (len(x) + 1e-8)
-	                            for ldx, label in enumerate(model_category_chosen)
+	                            for ldx, label in enumerate(model_labels)
                             }
                             monitoring_dict.update(chosen_data)
 
