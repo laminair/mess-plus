@@ -305,6 +305,7 @@ def simulate(args):
                                     # "step_energy_consumption": step_energy,          # disabled
                                     "step_cost_usd": step_cost,
                                     "running_avg_cost_usd": sum(COST_LIST) / (ctr + 1),
+                                    "running_total_cost_usd": sum(COST_LIST),
                                     "models/small_chosen": len(np.where(x_arr == 0)[0])
                                     / (len(x_arr) + 1e-8),
                                     "models/medium_chosen": len(np.where(x_arr == 1)[0])
