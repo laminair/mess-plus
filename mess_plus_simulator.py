@@ -262,7 +262,7 @@ def parse_args():
 	parser = argparse.ArgumentParser(description='Train classification model')
 	parser.add_argument('--benchmark-name', type=str, required=True,
 	                    help='Name of the benchmark you want to run. Must correspond with filename in config folder.')
-	parser.add_argument('--model-family', type=str, required=True, choices=["llama3", "qwen2"],
+	parser.add_argument('--model-family', type=str, required=True,
 	                    help='Folder name where the config file is located.')
 	parser.add_argument('--approach', type=str, required=True, choices=["pretrained", "online"],
 	                    help='Whether to use a pre-trained classifier or learn the classifier online')
