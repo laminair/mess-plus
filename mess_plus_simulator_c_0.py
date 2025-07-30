@@ -151,7 +151,6 @@ def simulate(args):
 						})
 
 						monitoring_dict = {}
-						classifier
 						for idx, sample in input_df[NUM_PRETRAINING_STEPS:].iterrows():
 							p_t, x_t = sample_from_bernoulli(c=algorithm_config["c"], timestamp=idx)
 							EXPLORATION_STEP_LIST.append(x_t)

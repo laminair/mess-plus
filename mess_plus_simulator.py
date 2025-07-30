@@ -2,6 +2,7 @@ import argparse
 import logging
 import numpy as np
 import pandas as pd
+import random
 import wandb
 import yaml
 
@@ -47,8 +48,13 @@ def simulate(args):
 			CONFIG = yaml.safe_load(f)
 			logger.info(CONFIG)
 
+		if args.dataset is not None:
+			folder_path = f"{PROJECT_ROOT_PATH}/data/{args.dataset}/inference_outputs/{args.benchmark_name}"
+		else:
+			folder_path = f"{PROJECT_ROOT_PATH}/data/{args.model_family}/inference_outputs/{args.benchmark_name}"
+
 		input_df = read_files_from_folder(
-			folder_path=f"{PROJECT_ROOT_PATH}/data/{args.model_family}/inference_outputs/{args.benchmark_name}")
+			folder_path=folder_path)
 		input_df["idx_original"] = input_df.index
 		input_df = input_df.sample(frac=1, random_state=seed).reset_index(drop=True)
 
@@ -93,8 +99,8 @@ def simulate(args):
 		sample_cols = input_df.columns.tolist()
 
 		ALPHA_VALUES = algorithm_config["alpha_values"]
-		C_VALUES = [1.0, 0.1, 0.01]
-		V_VALUES = [1.0, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001]
+		C_VALUES = [0.1]
+		V_VALUES = [0.01, 0.001, 0.0001, 0.00001, 0.000001]
 
 		for alpha in ALPHA_VALUES:
 			for c in C_VALUES:
@@ -118,6 +124,7 @@ def simulate(args):
 					model_category_list = [i for i in ENERGY_PER_MODEL.keys()]
 
 					Q = 0.0
+					Q_sparse = 0.0
 					ctr = 0
 
 					# Setup the classifier
@@ -153,6 +160,11 @@ def simulate(args):
 						monitoring_dict = {}
 						for idx, sample in input_df[NUM_PRETRAINING_STEPS:].iterrows():
 							p_t, x_t = sample_from_bernoulli(c=algorithm_config["c"], timestamp=idx)
+
+							sample_has_feedback = True
+							if "feedback_sparsity" in CONFIG["algorithm"].keys() and CONFIG["algorithm"]["feedback_sparsity"] != 1:
+								sample_has_feedback = random.uniform(0, 1) <= CONFIG["algorithm"]["feedback_sparsity"]
+
 							EXPLORATION_STEP_LIST.append(x_t)
 
 							logger.debug(f"Working on sample {idx}")
@@ -213,7 +225,7 @@ def simulate(args):
 								energy = np.array(energy).reshape(-1, 1)
 								probs = probs.reshape(-1, 1)
 
-								cost_fn = algorithm_config["V"] * energy + Q * (alpha - probs)
+								cost_fn = algorithm_config["V"] * energy + Q_sparse * (alpha - probs)
 								cost_fn = cost_fn.reshape(1, -1)
 								chosen_model_id = np.argmin(cost_fn)
 								model_category_chosen = model_category_list[chosen_model_id]
@@ -231,6 +243,8 @@ def simulate(args):
 								monitoring_dict[f"mess_plus/chosen_model"] = chosen_model_id
 
 							Q = max(0.0, Q + algorithm_config["alpha"] - result)
+							if sample_has_feedback:
+								Q_sparse = max(0.0, Q_sparse + algorithm_config["alpha"] - result)
 
 							x = np.array(MODEL_CHOSEN_LIST)
 							monitoring_dict.update({
@@ -238,6 +252,7 @@ def simulate(args):
 								"mess_plus/x_t": x_t,
 								"mess_plus/exploration_step_ratio": sum(EXPLORATION_STEP_LIST) / (ctr + 1),
 								"mess_plus/q_length": Q,
+								"mess_plus/q_sparse_length": Q_sparse,
 								"avg_accuracy": sum(ACCURACY_LIST) / (ctr + 1),
 								"step_time": step_time,
 								"total_runtime": sum(INFERENCE_TIME_LIST),
@@ -269,6 +284,7 @@ def parse_args():
 	                    help='Name of the benchmark you want to run. Must correspond with filename in config folder.')
 	parser.add_argument('--model-family', type=str, required=True,
 	                    help='Folder name where the config file is located.')
+	parser.add_argument('--dataset', type=str, default=None, required=False, help='Name of the dataset')
 	parser.add_argument('--approach', type=str, required=True, choices=["pretrained", "online"],
 	                    help='Whether to use a pre-trained classifier or learn the classifier online')
 	parser.add_argument('--wandb-entity', type=str, required=True,
@@ -282,5 +298,4 @@ def parse_args():
 
 if __name__ == "__main__":
 	args = parse_args()
-
 	simulate(args)
