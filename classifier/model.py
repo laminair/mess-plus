@@ -464,13 +464,15 @@ class MultilabelBERTClassifier:
 
         return predictions, probs
 
-    def make_model_if_not_exists(self, train_dataset=None):
+    def make_model_if_not_exists(self, train_dataset=None, num_labels: int = None):
         if not hasattr(self, 'model'):
             if self.num_labels is None:
                 # Infer from the dataset
                 sample = train_dataset[0]
-                if isinstance(sample, dict) and 'labels' in sample:
+                if isinstance(sample, dict) and 'labels' in sample and num_labels is None:
                     self.num_labels = sample['labels'].shape[0]
+                elif num_labels is not None:
+                    self.num_labels = num_labels
                 else:
                     raise ValueError("Could not infer num_labels from dataset. Please specify num_labels.")
 

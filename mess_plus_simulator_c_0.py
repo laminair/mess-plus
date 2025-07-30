@@ -61,9 +61,8 @@ def simulate(args):
 		num_labels = len(model_labels)
 		label_cols = [f"label_{label}" for label in model_labels]
 
-		classifier = MultilabelBERTClassifier(num_labels=num_labels, **CONFIG["classifier_model"])
-
 		if args.approach == "pretrained":
+			classifier = MultilabelBERTClassifier(num_labels=num_labels, **CONFIG["classifier_model"])
 			training_df = input_df.loc[:NUM_PRETRAINING_STEPS]
 			training_df = preprocess_dataframe(training_df, label_cols=label_cols)
 
@@ -121,6 +120,12 @@ def simulate(args):
 					Q = 0.0
 					ctr = 0
 
+					# Setup the classifier
+					if args.approach != "pretrained":
+						classifier = MultilabelBERTClassifier(num_labels=num_labels, **CONFIG["classifier_model"])
+						if c == 0:
+							classifier.make_model_if_not_exists(num_labels=num_labels)
+
 					run_name = (f"{args.benchmark_name}"
 					            f"_V={algorithm_config['V']}"
 					            f"_a={algorithm_config['alpha']}"
@@ -146,6 +151,7 @@ def simulate(args):
 						})
 
 						monitoring_dict = {}
+						classifier
 						for idx, sample in input_df[NUM_PRETRAINING_STEPS:].iterrows():
 							p_t, x_t = sample_from_bernoulli(c=algorithm_config["c"], timestamp=idx)
 							EXPLORATION_STEP_LIST.append(x_t)
