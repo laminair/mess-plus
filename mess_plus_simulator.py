@@ -100,7 +100,7 @@ def simulate(args):
 
 		ALPHA_VALUES = algorithm_config["alpha_values"]
 		C_VALUES = [0.1]
-		V_VALUES = [0.01, 0.001, 0.0001, 0.00001, 0.000001]
+		V_VALUES = [0.001, 0.0001, 0.00001, 0.000001]
 
 		for alpha in ALPHA_VALUES:
 			for c in C_VALUES:
