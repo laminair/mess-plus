@@ -130,8 +130,7 @@ def simulate(args):
 					# Setup the classifier
 					if args.approach != "pretrained":
 						classifier = MultilabelBERTClassifier(num_labels=num_labels, **CONFIG["classifier_model"])
-						if c == 0:
-							classifier.make_model_if_not_exists(num_labels=num_labels)
+						classifier.make_model_if_not_exists(num_labels=num_labels)
 
 					run_name = (f"{args.benchmark_name}"
 					            f"_V={algorithm_config['V']}"
