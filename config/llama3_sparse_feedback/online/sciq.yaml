@@ -1,0 +1,71 @@
+run_name: "baseline"
+seed: 43
+
+# You need to provide models in ascending order by parameter count for MESS+ to work correctly.
+model_zoo:
+  meta-llama/Llama-3.2-1B-Instruct:
+    category: "small"
+    gpu_indices: [0]
+    max_seq_len: 2048
+    gpu_memory_utilization: 0.12
+    quantization: null
+  meta-llama/Llama-3.2-3B:
+    category: "small"
+    gpu_indices: [0]
+    max_seq_len: 2048
+    gpu_memory_utilization: 0.15
+    quantization: null
+  unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit:
+    category: "medium"
+    gpu_indices: [0]
+    max_seq_len: 2048
+    gpu_memory_utilization: 0.15
+    quantization: "bitsandbytes"
+  unsloth/Llama-3.3-70B-Instruct-bnb-4bit:
+    category: "large"
+    gpu_indices: [0]
+    max_seq_len: 2048
+    gpu_memory_utilization: 0.53
+    quantization: "bitsandbytes"
+
+classifier_model:
+  model_id: "answerdotai/ModernBERT-base"
+  epochs: 3
+  learning_rate: 0.0596
+  weight_decay: 0.01
+  momentum: 0.95
+  batch_size: 32
+  max_length: 64
+  warmup_ratio: 0.1
+  threshold: 0.5
+  dropout_rate: 0.1
+  freeze_bert_layers: true
+  memory_size: 0
+  memory_strategy: random # This only works when memory_size > 0
+  reset_optimizer: false
+  regularization_lambda: 0.0
+  gpu_index: 0
+  disable_tqdm: true
+  # Path uses the "classifier" folder as root. Alternatively you can specify an absolute path.
+  checkpoint_path: "checkpoints/sciq"
+  use_pretrained_classifier: false
+  scoring_method: raw
+  validation_dataset_size: 0.1
+  generate_training_dataset: false
+  write_training_dataset_to_disk: false
+
+algorithm:
+  alpha_values: [0.95, 0.96, 0.97]
+  alpha: 0.75
+  c: 1
+  V: 0.01
+  feedback_sparsity: 0.2
+
+lm_eval:
+  # The run name will be the first benchmark in the list below.
+  benchmarks: ["sciq"]
+  num_repeats: 1
+  limit_num_samples: null
+  # TODO: Make sure we disable eager mode for the actual experiments to be as energy efficient as possible.
+  enforce_eager: true
+  write_to_disk: false
