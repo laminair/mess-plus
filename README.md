@@ -1,4 +1,4 @@
-# [NeurIPS 2025] Dynamically Learned Test-Time Model Routing in Language Model Zoos with Service Level Guarantees
+# [NeurIPS 2025] MESS+: Dynamically Learned Inference-Time LLM Routing in Model Zoos with Service Level Guarantees
 
 [![arXiv](https://img.shields.io/badge/arXiv-2505.19947-b31b1b.svg)](https://arxiv.org/abs/2505.19947)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
@@ -49,9 +49,26 @@ For all scenarios we provide `slurm` scripts with the full execution commands. P
 Note that `acc_norm` can be replaced by `acc` for benchmarks where no normalized accuracy is available. 
 Also the model label (e.g., `xsmall`) must match the labels in your yaml config file.  
 
+A minimal example to run an experiment: 
+```commandline
+VLLM_USE_V1=0 python3 main.py --config config/test/arc_challenge.yaml --model-family llama3 --wandb-entity test --wandb-project test --approach online
+```
+
+## The MESS+ core logic
+You can find the algorithm's core logic inside the `algorithm/` package.
+While we chose a stochastic process to choose between `exploration` and `exploitation`, the two phases can be applied 
+in different ways as well to better fit certain applications.
+
 
 ## Known technical issues
 `VLLM` has a V1 and V2 engine where the V2 engine's memory management does not work well when deploying multiple model onto a single GPU. 
 You can get around this by specifying `VLLM_USE_V1=0 python3 mess_plus.py ...`.
 The `Zeus` energy monitoring library sometimes recognizes CPUs to have RAPL capabilities without them actually having them. 
 This can lead to an error. To solve this, disable RAPL at startup and monitor the GPUs only.
+As a hotfix for ` AttributeError: 'ZeusMonitor' object has no attribute 'cpus'. Did you mean: 'gpus'?` you can disable CPU energy monitoring in the following: 
+- Navigate to `.venv/lib/python3.12/site-packages/zeus/device/cpu/rapl.py` and change line 137 to `return False`. 
+
+
+## Credits 
+We have used the [`Language Model Evaluation Harness`](https://github.com/EleutherAI/lm-evaluation-harness) (LM-Eval Harness) as a basis for our code.
+Thanks to the EleutherAI Institute for making such a comprehensive evaluation suite available.

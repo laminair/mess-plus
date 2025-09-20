@@ -241,17 +241,6 @@ class MultilabelBERTClassifier:
                     'lr': f"{self.learning_rate}"  # f"{scheduler.get_last_lr()[0]:.1e}"
                 })
 
-                # if wandb.run is not None:
-                #     # We only log to W&B if initialized
-                #     wandb.log({
-                #         "classifier/batch": idx + epoch * len(train_loader),
-                #         "classifier/batch_loss": batch_loss,
-                #         "classifier/learning_rate": self.learning_rate,  # scheduler.get_last_lr()[0],
-                #         "classifier/running_loss": running_loss,
-                #         "classifier/energy_consumption": sum([val for val in measurement.gpu_energy.values()]),
-                #         "classifier/train_ctr": self.train_ctr,
-                #     }, step=ctr)
-
                 self.train_ctr += 1
 
             avg_train_loss = train_loss / train_steps

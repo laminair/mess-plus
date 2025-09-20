@@ -384,7 +384,6 @@ class MessPlusAutomaticModelSelector:
                         )
 
                         cost_fn = cost_fn.reshape(1, -1)
-                        print(f"COST FN: {cost_fn}.")
                         chosen_model_id = np.argmin(cost_fn)
                         model_category_chosen = model_categories[chosen_model_id]
 
