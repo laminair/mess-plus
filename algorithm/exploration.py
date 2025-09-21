@@ -7,16 +7,14 @@ from typing import Dict, List
 
 def explore(
         sample: pd.DataFrame,
+        label_cols: List,
         classifier,
         classifier_config: Dict,
         approach: str = "online",
         text_col: str = "input_text",
         seed: int = 42,
-        step: int = 1,
-
+        step: int = 1
     ):
-
-    label_cols = [col for col in sample.columns if "label_" in col]
 
     classifier_metrics_dict = {}
     if approach == "online":

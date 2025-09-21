@@ -106,11 +106,15 @@ def create_bert_datasets(df, text_column, label_columns, model_name="bert-base-u
         train_size = dataset_size - val_size
 
         # Split the dataset
-        train_dataset, val_dataset = random_split(
-            full_dataset,
-            [train_size, val_size],
-            generator=torch.Generator().manual_seed(random_seed)
-        )
+        if dataset_size == 1:
+            train_dataset = full_dataset
+            val_dataset = None
+        else:
+            train_dataset, val_dataset = random_split(
+                full_dataset,
+                [train_size, val_size],
+                generator=torch.Generator().manual_seed(random_seed)
+            )
 
         return train_dataset, val_dataset, tokenizer
 

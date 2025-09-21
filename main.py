@@ -1,3 +1,7 @@
+"""
+This script is based on the LM-Eval Harness evaluator.py
+"""
+
 import argparse
 import contextlib
 import gc
@@ -32,7 +36,7 @@ from lm_eval.api.task import Instance
 
 from utils import is_nested_list
 from utils.data_capturing import StreamingDataProcessor, SampleGenerator
-from utils.mess_lm_eval_harness.vllm_v2 import MessLMEvalVLLM
+from utils.mess_lm_eval_harness.vllm import MessLMEvalVLLM
 from utils.mess_plus import sample_from_bernoulli
 from utils.misc import set_all_seeds
 
@@ -81,7 +85,6 @@ class MessPlusAutomaticModelSelector:
 
         # Classifier model
         self.classifier_config = self.config["classifier_model"]
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # Loggers
         # When using Zeus, you must disable RAPL CPU monitoring as this will cause the program to fail.
@@ -89,10 +92,6 @@ class MessPlusAutomaticModelSelector:
         self.wandb_run = None
 
         self.measurements = {data["category"]: [] for data in self.config["model_zoo"].values()}
-        self.nll_scores = {data["category"]: [] for data in self.config["model_zoo"].values()}
-        self.greedy_output = {data["category"]: [] for data in self.config["model_zoo"].values()}
-        self.predictions = {data["category"]: [] for data in self.config["model_zoo"].values()}
-        self.ground_truths = {data["category"]: [] for data in self.config["model_zoo"].values()}
         self.labels = [data["category"] for data in self.config["model_zoo"].values()]
         self.text_col = "input_text"
 
@@ -105,7 +104,7 @@ class MessPlusAutomaticModelSelector:
         self.limits = []
 
         self.task_dict = get_task_dict(
-            self.lm_eval_config["benchmarks"],
+            [self.config["benchmark"]],
             task_manager
         )
 
@@ -122,7 +121,7 @@ class MessPlusAutomaticModelSelector:
 
         # Config to capture the inference outputs for classifier validation
         self.data_writer = StreamingDataProcessor(
-            save_path=f"{PROJECT_ROOT_PATH}/data/{args.model_family}/inference_outputs",
+            save_path=f"{PROJECT_ROOT_PATH}/data/{args.config.split("/")[-2]}/inference_outputs",
             file_prefix="inference_data_",
             save_frequency=100
         )
@@ -229,6 +228,7 @@ class MessPlusAutomaticModelSelector:
             if log_samples:
                 results_dict[seed]["samples"] = dict(samples)
 
+        logger.info(f"Evaluation Results: {results_dict}")
         return results_dict
 
     def run_benchmark(
@@ -317,7 +317,8 @@ class MessPlusAutomaticModelSelector:
             ctr = 0
 
             # Setup the classifier
-            if args.approach == "pretrained":
+            if self.classifier_config["approach"] == "pretrained":
+                # Note: When you choose 'pretrained' the predictor still gets trained in the exploration phase!
                 classifier = MultilabelBERTClassifier(num_labels=len(self.labels), **self.config["classifier_model"])
                 classifier.load_model(self.classifier_config["checkpoint_path"])
             else:
@@ -384,9 +385,10 @@ class MessPlusAutomaticModelSelector:
                             classifier=classifier,
                             classifier_config=self.classifier_config,
                             text_col=self.text_col,
-                            approach=args.approach,
+                            approach=self.classifier_config["approach"],
                             seed=seed,
-                            step=timestamp
+                            step=timestamp,
+                            label_cols=label_cols
                         )
 
                         if "classifier/step_train_loss" in exploration_metrics.keys():
@@ -407,7 +409,7 @@ class MessPlusAutomaticModelSelector:
                         step_energy = sum([sample[i].item() for i in energy_cols])
                         monitoring_dict[f"mess_plus/inference_only_energy"] = step_energy
 
-                        if args.approach == "online":
+                        if self.classifier_config["approach"] == "online":
                             # We need to add the energy spent on training to the total energy consumption.
                             step_energy += train_energy
 
@@ -508,7 +510,7 @@ class MessPlusAutomaticModelSelector:
 
             if self.algorithm_config["write_benchmark_data_to_disk"]:
                 writer_stats = self.data_writer.finalize()
-                logger.info(f"Writing training dataset to disk done. Details: {writer_stats}")
+                logger.info(f"Data written to disk. Stats: {writer_stats}")
 
         ### Postprocess outputs ###
         task.apply_filters()
@@ -825,16 +827,10 @@ def parse_args():
     parser = argparse.ArgumentParser(description='MESS+ Algorithm Executor with LM-Eval integration')
     parser.add_argument('--config', type=str, required=True,
                         help='Name of the benchmark you want to run. Must correspond with filename in config folder.')
-    parser.add_argument('--model-family', type=str, required=True,
-                        help='Folder name where the config file is located.')
-    parser.add_argument('--approach', type=str, required=True, choices=["pretrained", "online"], default="online",
-                        help='Whether to use a pre-trained classifier or learn the classifier online')
     parser.add_argument('--wandb-entity', type=str, required=True,
                         help='W&B entity name')
     parser.add_argument('--wandb-project', type=str, required=True, default="messplus_test",
                         help='W&B project name')
-    parser.add_argument('--num-classifier-pretraining-steps', type=int, required=False, default=400,
-                        help='Number of pre-training steps for the classifier. Only has an effect with approach "pretrained".')
     return parser.parse_args()
 
 
