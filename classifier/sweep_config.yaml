@@ -1,0 +1,17 @@
+name: messplus_classifier_training
+method: bayes
+metric:
+  goal: minimize
+  name: val/loss
+parameters:
+  learning_rate:
+    min: 0.00001
+    max: 0.01
+  batch_size:
+    values: [1]
+  epochs:
+    values: [1, 3, 5]
+  momentum:
+    values: [0.9, 0.95, 0.99]
+  max_length:
+    values: [64, 128, 256]
