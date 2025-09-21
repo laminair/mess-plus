@@ -826,7 +826,7 @@ class MessPlusAutomaticModelSelector:
 def parse_args():
     parser = argparse.ArgumentParser(description='MESS+ Algorithm Executor with LM-Eval integration')
     parser.add_argument('--config', type=str, required=True,
-                        help='Name of the benchmark you want to run. Must correspond with filename in config folder.')
+                        help='Path to the yaml configuration file')
     parser.add_argument('--wandb-entity', type=str, required=True,
                         help='W&B entity name')
     parser.add_argument('--wandb-project', type=str, required=True, default="messplus_test",

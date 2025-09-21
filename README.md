@@ -51,7 +51,7 @@ Also the model label (e.g., `xsmall`) must match the labels in your yaml config 
 
 A minimal example to run an experiment: 
 ```commandline
-VLLM_USE_V1=0 python3 main.py --config config/test/arc_challenge.yaml --model-family llama3 --wandb-entity test --wandb-project test --approach online
+VLLM_USE_V1=0 python3 main.py --config config/llama3/arc_challenge.yaml --wandb-entity test --wandb-project test
 ```
 
 ## The MESS+ core logic

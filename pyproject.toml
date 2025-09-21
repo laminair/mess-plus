@@ -1,7 +1,7 @@
 [project]
 name = "mess-plus"
-version = "0.1.0"
-description = "This is the code base for the NeurIPS 2025 paper 'Dynamically Learned Test-Time Model Routing in Language Model Zoos with Service Level Guarantees'"
+version = "1.0.0"
+description = "This is the code base for the NeurIPS 2025 paper 'MESS+: Dynamically Learned Inference-Time LLM Routing in Model Zoos with Service Level Guarantees'."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
