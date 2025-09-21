@@ -68,7 +68,7 @@ simulated:
   alpha_values: [0.65, 0.75, 0.8]
   c_values: [0.01, 0.1, 1.0]
   v_values: [0.00001, 0.001, 0.01]
-  feedback_sparsity: 1.0
+  feedback_sparsity: 0.2
 
 lm_eval:
   num_repeats: 1
