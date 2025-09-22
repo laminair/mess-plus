@@ -25,5 +25,5 @@ enroot start \
     /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/python /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/main.py \
     --config /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/config/qwen2/winogrande.yaml \
     --wandb-entity tum-i13 \
-    --wandb-project mess-plus_qwen2_empirical_vFINAL \
+    --wandb-project mess-plus_qwen2_simulation_vFINAL \
     --dataset-path /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/data/qwen2/inference_outputs/winogrande

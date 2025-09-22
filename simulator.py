@@ -196,7 +196,6 @@ class MessPlusAutomaticModelSelectorSimulator:
                                     )
 
                                     chosen_model_id = self.labels.index(model_category_chosen)
-                                    print(f"MODEL ID: {chosen_model_id}")
                                     target_metric = sample[f"label_{model_category_chosen}"]
                                     step_time = sample[f"inference_time_{model_category_chosen}"]
                                     step_energy = sample[f"energy_consumption_{model_category_chosen}"]
