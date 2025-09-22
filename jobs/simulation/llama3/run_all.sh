@@ -1,13 +1,13 @@
 #!/bin/bash
 
-sbatch arc_challenge.sbatch
-sleep 1
-sbatch arc_easy.sbatch
-sleep 1
-sbatch boolq.sbatch
-sleep 1
-sbatch logiqa.sbatch
-sleep 1
+#sbatch arc_challenge.sbatch
+#sleep 1
+#sbatch arc_easy.sbatch
+#sleep 1
+#sbatch boolq.sbatch
+#sleep 1
+#sbatch logiqa.sbatch
+#sleep 1
 sbatch piqa.sbatch
 sleep 1
 sbatch sciq.sbatch

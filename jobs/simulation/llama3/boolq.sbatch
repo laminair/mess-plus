@@ -3,6 +3,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --time=01:35:00
 #SBATCH -o output_%A.out
+#SBATCH --exclude lrz-hgx-h100-025
 
 cd "$(dirname "$0")"
 
