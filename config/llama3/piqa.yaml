@@ -3,7 +3,7 @@ benchmark: "piqa"
 # You need to provide models in ascending order by parameter count for MESS+ to work correctly.
 model_zoo:
   meta-llama/Llama-3.2-1B-Instruct:
-    category: "xsmall"
+    category: "small"
     gpu_indices: [0]
     max_seq_len: 2048
     gpu_memory_utilization: 0.12
