@@ -22,7 +22,7 @@ enroot start \
     --mount /sbin \
     --mount /usr/share/ \
     messplus \
-    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/python /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/main.py \
+    /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/venv/bin/python /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/simulator.py \
     --config /dss/dssfs04/lwp-dss-0002/pn72yi/pn72yi-dss-0000/ge56heh2/mess-plus/config/llama3/arc_challenge.yaml \
     --wandb-entity tum-i13 \
     --wandb-project mess-plus_llama3_empirical_vFINAL \
