@@ -45,6 +45,7 @@ classifier_model:
   regularization_lambda: 0.0
   gpu_index: 0
   disable_tqdm: true
+  approach: "online"
   # Path uses the "classifier" folder as root. Alternatively you can specify an absolute path.
   checkpoint_path: "checkpoints/winogrande"
   use_pretrained_classifier: false
