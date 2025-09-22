@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH -p lrz-hgx-h100-94x4
 #SBATCH --gres=gpu:1
-#SBATCH --time=12:30:00
+#SBATCH --time=01:05:00
 #SBATCH -o output_%A.out
 
 cd "$(dirname "$0")"
