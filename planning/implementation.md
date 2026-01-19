@@ -5,7 +5,7 @@
 For each request t:
 
 
-1. Sample $X_t$ ~ Bernoulli($p_t$) where p_t = min(1, $\frac{c}{\sqrt[4]{t}}$)
+1. Sample $X_t$ ~ Bernoulli($p_t$) where $p_t = min(1, \frac{c}{\sqrt[4]{t}})$
     
     1. IF $X_t$ = 1 (EXPLORE):
          - Query ALL models with the request
@@ -39,3 +39,15 @@ Showing multiple outputs to users and requesting feedback may be confusing and p
 While "coarse tuning works reasonably well," optimal V selection appears task-dependent. No automated mechanism for V selection provided.
 
 1. Low prio - down the road: Can we use MESS+ observations to determine what models to schedule?
+
+
+## Related work we need to add
+In no particular order.
+even though RouterBench exists, the benchmark API is still difficult to use.
+The repo is also not maintained, making it difficult to adapt new use cases (e.g., from single request interactions to multi-turn, multi-hop et al. interactions). 
+
+- [Causal LLM Routing: End-to-End Regret Minimization from Observational Data](https://arxiv.org/pdf/2505.16037v2)
+- [EmbedLLM: Learning Compact Representations of Large Language Models](https://arxiv.org/abs/2410.02223)
+- [BEST-Route: Adaptive LLM Routing with Test-Time Optimal Compute](https://arxiv.org/abs/2506.22716)
+- [Beyond GPT-5: Making LLMs Cheaper and Better via Performance-Efficiency Optimized Routing (Avengers-Pro)](https://dl.acm.org/doi/10.1145/3772429.3772445)
+- [RouterEval: A Comprehensive Benchmark for Routing LLMs](https://github.com/MilkThink-Lab/RouterEval)
